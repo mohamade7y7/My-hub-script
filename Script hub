@@ -10,8 +10,10 @@ local CONFIG = {
 	-- (Roblox NO carga links externos como imgur. Sube la imagen a create.roblox.com y usa su ID)
 	BACKGROUND_IMAGE = "",
 	TOGGLE_KEY = Enum.KeyCode.RightShift,
-	PASSWORD = "1234", -- cambia esto
+	PASSWORD = "MOHA", -- cambia esto
+	LOGO = "82409250227350", -- ID de tu logo (imagen subida a Roblox)
 }
+local LOGO_IMG = CONFIG.LOGO ~= "" and ("rbxassetid://" .. (CONFIG.LOGO:gsub("%D", ""))) or ""
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -210,7 +212,15 @@ end
 -- GUI BASE -----------------------------------------------------------------
 local gui = new("ScreenGui", { Name = "NexusHub", ResetOnSpawn = false, DisplayOrder = 100, ZIndexBehavior = Enum.ZIndexBehavior.Sibling }, lp:WaitForChild("PlayerGui"))
 
-local openBtn = button(gui, "☰  " .. CONFIG.TITLE, UDim2.new(0, 130, 0, 38), UDim2.new(0, 14, 0.5, -19), "accent")
+local openBtn = button(gui, CONFIG.TITLE .. "  ", UDim2.new(0, 150, 0, 38), UDim2.new(0, 14, 0.5, -19), "accent")
+openBtn.TextXAlignment = Enum.TextXAlignment.Right
+if LOGO_IMG ~= "" then
+	local ol = new("ImageLabel", {
+		Size = UDim2.new(0, 28, 0, 28), Position = UDim2.new(0, 8, 0.5, -14), BackgroundTransparency = 1,
+		Image = LOGO_IMG, ScaleType = Enum.ScaleType.Fit,
+	}, openBtn)
+	round(ol, 6)
+end
 
 local main = new("Frame", {
 	Size = UDim2.new(0, 560, 0, 410), Position = UDim2.new(.5, 0, .5, 0), AnchorPoint = Vector2.new(.5, .5),
@@ -255,10 +265,17 @@ end
 local title = new("Frame", { Size = UDim2.new(1, 0, 0, 40), BorderSizePixel = 0, BackgroundTransparency = .2, ZIndex = 3 }, main)
 theme(title, "panel")
 local tl = new("TextLabel", {
-	Text = "⚡ " .. CONFIG.TITLE, Size = UDim2.new(1, -120, 1, 0), Position = UDim2.new(0, 14, 0, 0), BackgroundTransparency = 1,
+	Text = "⚡ " .. CONFIG.TITLE, Size = UDim2.new(1, -150, 1, 0), Position = UDim2.new(0, LOGO_IMG ~= "" and 46 or 14, 0, 0), BackgroundTransparency = 1,
 	Font = Enum.Font.GothamBlack, TextSize = 16, TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 3,
 }, title)
 txt(tl)
+if LOGO_IMG ~= "" then
+	local tlogo = new("ImageLabel", {
+		Size = UDim2.new(0, 28, 0, 28), Position = UDim2.new(0, 10, 0.5, -14), BackgroundTransparency = 1,
+		Image = LOGO_IMG, ScaleType = Enum.ScaleType.Fit, ZIndex = 4,
+	}, title)
+	round(tlogo, 6)
+end
 local ver = new("TextLabel", {
 	Text = "v4.0  •  RightShift", Size = UDim2.new(0, 110, 1, 0), Position = UDim2.new(1, -205, 0, 0), BackgroundTransparency = 1,
 	Font = Enum.Font.Gotham, TextSize = 11, TextTransparency = .4, ZIndex = 3,
@@ -350,6 +367,13 @@ local lockTitle = new("TextLabel", {
 	Font = Enum.Font.GothamBlack, TextSize = 16, ZIndex = 51,
 }, lock)
 txt(lockTitle)
+if LOGO_IMG ~= "" then
+	local llogo = new("ImageLabel", {
+		Size = UDim2.new(0, 28, 0, 28), Position = UDim2.new(0, 14, 0, 4), BackgroundTransparency = 1,
+		Image = LOGO_IMG, ScaleType = Enum.ScaleType.Fit, ZIndex = 51,
+	}, lock)
+	round(llogo, 6)
+end
 local passBox = textbox(lock, "Contraseña")
 passBox.Size = UDim2.new(1, -30, 0, 34)
 passBox.Position = UDim2.new(0, 15, 0, 46)
@@ -457,7 +481,7 @@ local function selectTab(name)
 	applyAll()
 end
 local function addTab(name, text, index)
-	local b = button(side, text, UDim2.new(1, -14, 0, 30), UDim2.new(0, 7, 0, 6 + (index - 1) * 34), "panel")
+	local b = button(side, text, UDim2.new(1, -14, 0, 28), UDim2.new(0, 7, 0, 6 + (index - 1) * 31), "panel")
 	b.ZIndex = 4
 	local ind = new("Frame", { Name = "Ind", Size = UDim2.new(0, 3, 0.6, 0), Position = UDim2.new(0, 3, 0.2, 0), BackgroundColor3 = WHITE, BorderSizePixel = 0, Visible = false, ZIndex = 5 }, b)
 	round(ind, 2)
@@ -1693,6 +1717,82 @@ lp.CharacterAdded:Connect(function()
 end)
 end
 
+-- PÁGINA: AIMASSETS (ayuda para apuntar) ------------------------------------------------------
+do
+local pAim = listPage("AimAssets")
+local aimOn, aimStrength, aimFov = false, 30, 120
+local aimHold, aimHead, aimWalls, aimCircle = false, true, true, true
+
+local aimGui = new("ScreenGui", { Name = "AimFov", ResetOnSpawn = false, IgnoreGuiInset = true, DisplayOrder = 99 }, lp:WaitForChild("PlayerGui"))
+local circ = new("Frame", {
+	Size = UDim2.new(0, aimFov * 2, 0, aimFov * 2), AnchorPoint = Vector2.new(.5, .5), Position = UDim2.new(.5, 0, .5, 0),
+	BackgroundTransparency = 1, BorderSizePixel = 0, Visible = false,
+}, aimGui)
+round(circ, 1000)
+local circStroke = new("UIStroke", { Color = State.Accent, Thickness = 1.5, Transparency = .2 }, circ)
+
+local function refreshCircle()
+	circ.Visible = aimOn and aimCircle
+	circStroke.Color = State.Accent
+end
+
+local cAim = card(pAim, "🎯 AimAssets")
+toggle(cAim, "Activar ayuda de apuntado", false, function(v) aimOn = v refreshCircle() end)
+slider(cAim, "Fuerza (1-100)", 1, 100, 30, function(v) aimStrength = v end)
+slider(cAim, "FOV (tamaño del círculo)", 20, 400, 120, function(v)
+	aimFov = v
+	circ.Size = UDim2.new(0, v * 2, 0, v * 2)
+end)
+
+local cAim2 = card(pAim, "⚙ Opciones")
+toggle(cAim2, "Mostrar círculo FOV", true, function(v) aimCircle = v refreshCircle() end)
+toggle(cAim2, "Apuntar a la cabeza", true, function(v) aimHead = v end)
+toggle(cAim2, "Solo si lo veo (sin paredes)", true, function(v) aimWalls = v end)
+toggle(cAim2, "Solo al mantener clic derecho", false, function(v) aimHold = v end)
+label(cAim2, "Mueve la cámara suavemente hacia el jugador más cercano al centro de la pantalla, dentro del círculo.", 11, 44, true)
+
+local rayParams = RaycastParams.new()
+rayParams.FilterType = Enum.RaycastFilterType.Exclude
+
+local function pickTarget(cam)
+	local vp = cam.ViewportSize
+	local center = Vector2.new(vp.X / 2, vp.Y / 2)
+	local best, bestD = nil, aimFov
+	for _, p in ipairs(Players:GetPlayers()) do
+		local ch = p ~= lp and p.Character
+		local hum = ch and ch:FindFirstChildOfClass("Humanoid")
+		local part = ch and ((aimHead and ch:FindFirstChild("Head")) or ch:FindFirstChild("HumanoidRootPart"))
+		if part and hum and hum.Health > 0 then
+			local v, on = cam:WorldToViewportPoint(part.Position)
+			if on then
+				local d = (Vector2.new(v.X, v.Y) - center).Magnitude
+				if d < bestD then
+					local visible = true
+					if aimWalls then
+						rayParams.FilterDescendantsInstances = { lp.Character, ch }
+						local origin = cam.CFrame.Position
+						visible = workspace:Raycast(origin, part.Position - origin, rayParams) == nil
+					end
+					if visible then best, bestD = part, d end
+				end
+			end
+		end
+	end
+	return best
+end
+
+RunService:BindToRenderStep("AimAssets", Enum.RenderPriority.Camera.Value + 1, function()
+	if not aimOn then return end
+	if aimHold and not UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then return end
+	local cam = camNow()
+	local target = pickTarget(cam)
+	if target then
+		local goal = CFrame.lookAt(cam.CFrame.Position, target.Position)
+		cam.CFrame = cam.CFrame:Lerp(goal, math.clamp(aimStrength / 100 * 0.5, 0, 1))
+	end
+end)
+end
+
 -- RESPAWN -----------------------------------------------------------------------------------
 lp.CharacterAdded:Connect(function(char)
 	stopFly()
@@ -1727,6 +1827,7 @@ addTab("Visual", "👁  Visual", 6)
 addTab("Utilidades", "🛠  Utilidades", 7)
 addTab("Espectar", "🎥  Espectar", 8)
 addTab("Avatar", "👤  Avatar", 9)
+addTab("AimAssets", "🎯  AimAssets", 10)
 if CONFIG.BACKGROUND_IMAGE ~= "" then setBackground(CONFIG.BACKGROUND_IMAGE) end
 selectTab("Ajustes")
 applyAll()
