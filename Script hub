@@ -10,6 +10,7 @@ local CONFIG = {
 	-- (Roblox NO carga links externos como imgur. Sube la imagen a create.roblox.com y usa su ID)
 	BACKGROUND_IMAGE = "",
 	TOGGLE_KEY = Enum.KeyCode.RightShift,
+	PASSWORD = "1234", -- cambia esto
 }
 
 local Players = game:GetService("Players")
@@ -334,7 +335,90 @@ local function setOpen(v)
 	end
 	busy = false
 end
-openBtn.MouseButton1Click:Connect(function() setOpen(not isOpen) end)
+
+-- CONTRASEÑA ----------------------------------------------------------
+local unlocked = false
+local realPass = ""
+local lock = new("Frame", {
+	Size = UDim2.new(0, 280, 0, 175), Position = UDim2.new(.5, 0, .5, 0), AnchorPoint = Vector2.new(.5, .5),
+	BorderSizePixel = 0, Visible = false, ZIndex = 50,
+}, gui)
+round(lock, 14) theme(lock, "bg")
+new("UIStroke", { Thickness = 2, Color = State.Accent }, lock)
+local lockTitle = new("TextLabel", {
+	Text = "🔒 " .. CONFIG.TITLE, Size = UDim2.new(1, 0, 0, 36), BackgroundTransparency = 1,
+	Font = Enum.Font.GothamBlack, TextSize = 16, ZIndex = 51,
+}, lock)
+txt(lockTitle)
+local passBox = textbox(lock, "Contraseña")
+passBox.Size = UDim2.new(1, -30, 0, 34)
+passBox.Position = UDim2.new(0, 15, 0, 46)
+passBox.ZIndex = 51
+local lockMsg = new("TextLabel", {
+	Text = "", Size = UDim2.new(1, -30, 0, 16), Position = UDim2.new(0, 15, 0, 84), BackgroundTransparency = 1,
+	Font = Enum.Font.Gotham, TextSize = 11, TextColor3 = Color3.fromRGB(255, 90, 90), ZIndex = 51,
+}, lock)
+local lockBtn = button(lock, "Entrar", UDim2.new(1, -30, 0, 34), UDim2.new(0, 15, 0, 110))
+lockBtn.ZIndex = 51
+
+-- oculta lo que escribes con *
+passBox:GetPropertyChangedSignal("Text"):Connect(function()
+	local t = passBox.Text
+	if t:find("[^%*]") or #t ~= #realPass then
+		if #t > #realPass then realPass = realPass .. t:sub(#realPass + 1)
+		elseif #t < #realPass then realPass = realPass:sub(1, #t) end
+		passBox.Text = ("*"):rep(#realPass)
+	end
+end)
+
+local function tryLogin()
+	if realPass == CONFIG.PASSWORD then
+		unlocked = true
+		lock.Visible = false
+		lockMsg.Text = ""
+		setOpen(true)
+	else
+		lockMsg.Text = "Contraseña incorrecta"
+		realPass = ""
+		passBox.Text = ""
+	end
+end
+lockBtn.MouseButton1Click:Connect(tryLogin)
+passBox.FocusLost:Connect(function(enter) if enter then tryLogin() end end)
+
+local function toggleMenu()
+	if not unlocked then
+		lock.Visible = not lock.Visible
+		return
+	end
+	setOpen(not isOpen)
+end
+
+-- BOTÓN DE ABRIR: arrastrable (si no lo mueves, abre/cierra) ----------
+do
+	local dragging, moved, dragStart, startPos = false, false, nil, nil
+	openBtn.InputBegan:Connect(function(i)
+		if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+			dragging, moved, dragStart, startPos = true, false, i.Position, openBtn.Position
+		end
+	end)
+	UIS.InputChanged:Connect(function(i)
+		if dragging and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then
+			local d = i.Position - dragStart
+			if d.Magnitude > 6 then moved = true end
+			if moved then
+				openBtn.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X, startPos.Y.Scale, startPos.Y.Offset + d.Y)
+			end
+		end
+	end)
+	UIS.InputEnded:Connect(function(i)
+		if dragging and (i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch) then
+			dragging = false
+			if not moved then toggleMenu() end
+		end
+	end)
+end
+
 closeBtn.MouseButton1Click:Connect(function() setOpen(false) end)
 local minBtn = button(title, "–", UDim2.new(0, 28, 0, 28), UDim2.new(1, -70, 0, 6), "accent")
 minBtn.ZIndex = 4
@@ -347,7 +431,7 @@ minBtn.MouseButton1Click:Connect(function()
 	content.Visible = not minimized
 end)
 UIS.InputBegan:Connect(function(i, gp)
-	if not gp and i.KeyCode == CONFIG.TOGGLE_KEY then setOpen(not isOpen) end
+	if not gp and i.KeyCode == CONFIG.TOGGLE_KEY then toggleMenu() end
 end)
 
 -- PESTAÑAS -------------------------------------------------------------------
