@@ -1,0 +1,1648 @@
+--[[ NEXUS HUB v2  |  LocalScript
+Ponlo en: StarterPlayer > StarterPlayerScripts
+Pestañas: Ajustes · Teleport · Volar · Jugador · Avatar
+Atajo: RightShift abre/cierra el menú
+]]
+
+local CONFIG = {
+	TITLE = "NEXUS HUB",
+	-- Fondo: ID de imagen de Roblox. Ej: "rbxassetid://1234567890" o solo "1234567890".
+	-- (Roblox NO carga links externos como imgur. Sube la imagen a create.roblox.com y usa su ID)
+	BACKGROUND_IMAGE = "",
+	TOGGLE_KEY = Enum.KeyCode.RightShift,
+}
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local UIS = game:GetService("UserInputService")
+
+local lp = Players.LocalPlayer
+local WHITE = Color3.new(1, 1, 1)
+local function camNow() return workspace.CurrentCamera end
+
+-- ESTADO / TEMA ----------------------------------------------------------
+local State = {
+	Menu = Color3.fromRGB(18, 20, 32),
+	Accent = Color3.fromRGB(0, 140, 255),
+	Text = WHITE,
+	Anim = true,
+	Rainbow = false,
+}
+local themed, texts = {}, {}
+local stroke
+local orderN = 0
+local function nextOrder() orderN += 1 return orderN end
+
+local function colorFor(kind)
+	if kind == "bg" then return State.Menu
+	elseif kind == "panel" then return State.Menu:Lerp(WHITE, 0.07)
+	elseif kind == "card" then return State.Menu:Lerp(WHITE, 0.1)
+	else return State.Accent end
+end
+local function theme(obj, kind) themed[obj] = kind obj.BackgroundColor3 = colorFor(kind) end
+local function txt(obj) texts[obj] = true obj.TextColor3 = State.Text end
+local function applyAll()
+	for obj, kind in pairs(themed) do
+		if obj.Parent then obj.BackgroundColor3 = colorFor(kind) else themed[obj] = nil end
+	end
+	for obj in pairs(texts) do
+		if obj.Parent then obj.TextColor3 = State.Text else texts[obj] = nil end
+	end
+	if stroke and not State.Rainbow then stroke.Color = State.Accent end
+end
+
+-- HELPERS ----------------------------------------------------------------
+local function tw(obj, t, props, style, dir)
+	return TweenService:Create(obj, TweenInfo.new(t, style or Enum.EasingStyle.Quad, dir or Enum.EasingDirection.Out), props)
+end
+local function new(class, props, parent)
+	local o = Instance.new(class)
+	for k, v in pairs(props) do o[k] = v end
+	o.Parent = parent
+	return o
+end
+local function round(o, r) new("UICorner", { CornerRadius = UDim.new(0, r or 8) }, o) end
+
+local function button(parent, text, size, pos, kind)
+	local b = new("TextButton", {
+		Text = text, Size = size, Position = pos or UDim2.new(), AutoButtonColor = false,
+		Font = Enum.Font.GothamBold, TextSize = 13, BorderSizePixel = 0,
+	}, parent)
+	round(b, 8) theme(b, kind or "accent") txt(b)
+	new("UIGradient", { Color = ColorSequence.new(WHITE, Color3.fromRGB(205, 205, 220)), Rotation = 90 }, b)
+	local sc = new("UIScale", {}, b)
+	b.MouseEnter:Connect(function() if State.Anim then tw(sc, .12, { Scale = 1.04 }):Play() end end)
+	b.MouseLeave:Connect(function() tw(sc, .12, { Scale = 1 }):Play() end)
+	b.MouseButton1Down:Connect(function() if State.Anim then tw(sc, .08, { Scale = .94 }):Play() end end)
+	b.MouseButton1Up:Connect(function() tw(sc, .08, { Scale = State.Anim and 1.04 or 1 }):Play() end)
+	return b
+end
+
+local function label(parent, text, size, h, dim)
+	local l = new("TextLabel", {
+		Text = text, BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, h or 20), Font = Enum.Font.GothamBold,
+		TextSize = size or 13, TextXAlignment = Enum.TextXAlignment.Left, TextWrapped = true,
+		TextTransparency = dim and 0.3 or 0, LayoutOrder = nextOrder(),
+	}, parent)
+	txt(l)
+	return l
+end
+
+local function textbox(parent, placeholder)
+	local tb = new("TextBox", {
+		PlaceholderText = placeholder, Text = "", Size = UDim2.new(1, 0, 0, 32), Font = Enum.Font.Gotham, TextSize = 13,
+		ClearTextOnFocus = false, BorderSizePixel = 0, PlaceholderColor3 = Color3.fromRGB(150, 150, 165),
+		TextXAlignment = Enum.TextXAlignment.Left, LayoutOrder = nextOrder(),
+	}, parent)
+	round(tb, 8) theme(tb, "bg") txt(tb)
+	new("UIPadding", { PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10) }, tb)
+	new("UIStroke", { Color = WHITE, Transparency = .88, Thickness = 1 }, tb)
+	return tb
+end
+
+local function card(parent, title)
+	local c = new("Frame", {
+		Size = UDim2.new(1, -6, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = .25,
+		BorderSizePixel = 0, LayoutOrder = nextOrder(),
+	}, parent)
+	round(c, 10) theme(c, "card")
+	new("UIStroke", { Color = WHITE, Transparency = .9, Thickness = 1 }, c)
+	new("UIPadding", { PaddingTop = UDim.new(0, 10), PaddingBottom = UDim.new(0, 10), PaddingLeft = UDim.new(0, 12), PaddingRight = UDim.new(0, 12) }, c)
+	new("UIListLayout", { Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder }, c)
+	if title then
+		local l = label(c, title, 14, 20) l.Font = Enum.Font.GothamBlack
+		local u = new("Frame", { Size = UDim2.new(0, 34, 0, 3), BorderSizePixel = 0, LayoutOrder = nextOrder() }, c)
+		round(u, 2) theme(u, "accent")
+	end
+	return c
+end
+
+local function row(parent, h)
+	return new("Frame", { Size = UDim2.new(1, 0, 0, h), BackgroundTransparency = 1, LayoutOrder = nextOrder() }, parent)
+end
+
+local function toggle(parent, text, init, cb)
+	local r = row(parent, 30)
+	local l = new("TextLabel", {
+		Text = text, BackgroundTransparency = 1, Size = UDim2.new(1, -80, 1, 0), Font = Enum.Font.GothamMedium,
+		TextSize = 13, TextXAlignment = Enum.TextXAlignment.Left,
+	}, r)
+	txt(l)
+	local b = button(r, "", UDim2.new(0, 66, 0, 26), UDim2.new(1, -66, 0.5, -13), "accent")
+	local on = init
+	local function set(v, silent)
+		on = v
+		b.Text = on and "ON" or "OFF"
+		b.BackgroundTransparency = on and 0 or 0.65
+		if not silent then cb(on) end
+	end
+	b.MouseButton1Click:Connect(function() set(not on) end)
+	set(init, true)
+	return set
+end
+
+-- cb(valor, desdeUsuario)  |  devuelve setValue(v, desdeUsuario)
+local function slider(parent, text, min, max, init, cb)
+	local holder = row(parent, 46)
+	local l = new("TextLabel", {
+		Size = UDim2.new(1, 0, 0, 18), BackgroundTransparency = 1, Font = Enum.Font.GothamMedium, TextSize = 13,
+		TextXAlignment = Enum.TextXAlignment.Left,
+	}, holder)
+	txt(l)
+	local bar = new("Frame", { Size = UDim2.new(1, -10, 0, 8), Position = UDim2.new(0, 5, 0, 30), BorderSizePixel = 0 }, holder)
+	round(bar, 4) theme(bar, "bg")
+	local fill = new("Frame", { Size = UDim2.new(0, 0, 1, 0), BorderSizePixel = 0 }, bar)
+	round(fill, 4) theme(fill, "accent")
+	local knob = new("Frame", { Size = UDim2.new(0, 16, 0, 16), AnchorPoint = Vector2.new(.5, .5), BackgroundColor3 = WHITE, BorderSizePixel = 0 }, bar)
+	round(knob, 8)
+	local function setValue(v, fromUser)
+		v = math.clamp(v, min, max)
+		local a = (v - min) / (max - min)
+		fill.Size = UDim2.new(a, 0, 1, 0)
+		knob.Position = UDim2.new(a, 0, .5, 0)
+		l.Text = text .. ": " .. v
+		cb(v, fromUser)
+	end
+	local dragging = false
+	local function update(x)
+		local a = math.clamp((x - bar.AbsolutePosition.X) / bar.AbsoluteSize.X, 0, 1)
+		setValue(math.floor(min + (max - min) * a + 0.5), true)
+	end
+	holder.InputBegan:Connect(function(i)
+		if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+			dragging = true update(i.Position.X)
+		end
+	end)
+	UIS.InputChanged:Connect(function(i)
+		if dragging and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then
+			update(i.Position.X)
+		end
+	end)
+	UIS.InputEnded:Connect(function(i)
+		if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then dragging = false end
+	end)
+	setValue(init, false)
+	return setValue
+end
+
+local function palette(parent, colors, key)
+	local r = row(parent, 30)
+	new("UIListLayout", {
+		FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 6), VerticalAlignment = Enum.VerticalAlignment.Center,
+	}, r)
+	for _, c in ipairs(colors) do
+		local s = new("TextButton", { Text = "", Size = UDim2.new(0, 26, 0, 26), BackgroundColor3 = c, AutoButtonColor = false }, r)
+		round(s, 13)
+		new("UIStroke", { Color = WHITE, Thickness = 1, Transparency = .5 }, s)
+		s.MouseButton1Click:Connect(function()
+			State[key] = c
+			applyAll()
+			if State.Anim then
+				local t = tw(s, .1, { Size = UDim2.new(0, 32, 0, 32) }) t:Play() t.Completed:Wait()
+				tw(s, .1, { Size = UDim2.new(0, 26, 0, 26) }):Play()
+			end
+		end)
+	end
+end
+
+-- GUI BASE -----------------------------------------------------------------
+local gui = new("ScreenGui", { Name = "NexusHub", ResetOnSpawn = false, DisplayOrder = 100, ZIndexBehavior = Enum.ZIndexBehavior.Sibling }, lp:WaitForChild("PlayerGui"))
+
+local openBtn = button(gui, "☰  " .. CONFIG.TITLE, UDim2.new(0, 130, 0, 38), UDim2.new(0, 14, 0.5, -19), "accent")
+
+local main = new("Frame", {
+	Size = UDim2.new(0, 560, 0, 410), Position = UDim2.new(.5, 0, .5, 0), AnchorPoint = Vector2.new(.5, .5),
+	BorderSizePixel = 0, Visible = false, ClipsDescendants = true,
+}, gui)
+round(main, 14) theme(main, "bg")
+local scale = new("UIScale", {}, main)
+stroke = new("UIStroke", { Thickness = 2, Color = State.Accent }, main)
+
+-- capas de fondo
+local bgGrad = new("Frame", { Size = UDim2.new(1, 0, 1, 0), BorderSizePixel = 0, ZIndex = 0 }, main)
+theme(bgGrad, "bg")
+new("UIGradient", { Color = ColorSequence.new(WHITE, Color3.fromRGB(120, 120, 150)), Rotation = 45 }, bgGrad)
+local bgImg = new("ImageLabel", {
+	Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, ScaleType = Enum.ScaleType.Crop,
+	ImageTransparency = 0.45, ZIndex = 1, Visible = false,
+}, main)
+round(bgImg, 14)
+local orbs = new("Frame", { Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, ZIndex = 2 }, main)
+local function orb(size, pos)
+	local o = new("Frame", { Size = UDim2.new(0, size, 0, size), Position = pos, BackgroundTransparency = .86, BorderSizePixel = 0 }, orbs)
+	round(o, size) theme(o, "accent")
+end
+orb(230, UDim2.new(0, -70, 0, -70))
+orb(280, UDim2.new(1, -150, 1, -120))
+orb(120, UDim2.new(.55, 0, 0, 20))
+
+local function parseImage(s)
+	s = (s or ""):gsub("%s", "")
+	if s == "" then return nil end
+	local id = s:match("rbxassetid://(%d+)") or s:match("[?&]id=(%d+)") or s:match("/library/(%d+)")
+		or s:match("/catalog/(%d+)") or s:match("/store/asset/(%d+)") or s:match("^(%d+)$")
+	return id and ("rbxassetid://" .. id) or nil
+end
+local function setBackground(s)
+	local img = parseImage(s)
+	if img then bgImg.Image = img bgImg.Visible = true return true end
+	bgImg.Visible = false
+	return false
+end
+
+local title = new("Frame", { Size = UDim2.new(1, 0, 0, 40), BorderSizePixel = 0, BackgroundTransparency = .2, ZIndex = 3 }, main)
+theme(title, "panel")
+local tl = new("TextLabel", {
+	Text = "⚡ " .. CONFIG.TITLE, Size = UDim2.new(1, -120, 1, 0), Position = UDim2.new(0, 14, 0, 0), BackgroundTransparency = 1,
+	Font = Enum.Font.GothamBlack, TextSize = 16, TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 3,
+}, title)
+txt(tl)
+local ver = new("TextLabel", {
+	Text = "v4.0  •  RightShift", Size = UDim2.new(0, 110, 1, 0), Position = UDim2.new(1, -205, 0, 0), BackgroundTransparency = 1,
+	Font = Enum.Font.Gotham, TextSize = 11, TextTransparency = .4, ZIndex = 3,
+}, title)
+txt(ver)
+local tline = new("Frame", { Size = UDim2.new(1, 0, 0, 2), Position = UDim2.new(0, 0, 1, -2), BorderSizePixel = 0, ZIndex = 4 }, title)
+theme(tline, "accent")
+new("UIGradient", { Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(1, 1) }) }, tline)
+local closeBtn = button(title, "X", UDim2.new(0, 28, 0, 28), UDim2.new(1, -36, 0, 6))
+themed[closeBtn] = nil texts[closeBtn] = nil
+closeBtn.BackgroundColor3 = Color3.fromRGB(225, 55, 65)
+closeBtn.TextColor3 = WHITE
+closeBtn.ZIndex = 4
+
+local side = new("Frame", { Size = UDim2.new(0, 128, 1, -40), Position = UDim2.new(0, 0, 0, 40), BorderSizePixel = 0, BackgroundTransparency = .35, ZIndex = 3 }, main)
+theme(side, "panel")
+local content = new("Frame", { Size = UDim2.new(1, -146, 1, -56), Position = UDim2.new(0, 138, 0, 48), BackgroundTransparency = 1, ZIndex = 3, ClipsDescendants = true }, main)
+
+local toast = new("TextLabel", {
+	Size = UDim2.new(0, 250, 0, 28), Position = UDim2.new(.5, -125, 1, -38), Visible = false, Font = Enum.Font.GothamBold,
+	TextSize = 12, ZIndex = 10, BorderSizePixel = 0,
+}, main)
+round(toast, 8) theme(toast, "accent") txt(toast)
+local toastId = 0
+local function notify(t)
+	toastId += 1
+	local id = toastId
+	toast.Text = t toast.Visible = true
+	task.delay(2.2, function() if id == toastId then toast.Visible = false end end)
+end
+
+-- arrastrar ventana
+do
+	local dragging, dragStart, startPos
+	title.InputBegan:Connect(function(i)
+		if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+			dragging, dragStart, startPos = true, i.Position, main.Position
+		end
+	end)
+	UIS.InputChanged:Connect(function(i)
+		if dragging and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then
+			local d = i.Position - dragStart
+			main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X, startPos.Y.Scale, startPos.Y.Offset + d.Y)
+		end
+	end)
+	UIS.InputEnded:Connect(function(i)
+		if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then dragging = false end
+	end)
+end
+
+-- abrir / cerrar
+local isOpen, busy = false, false
+local function fitScale()
+	local vp = camNow().ViewportSize
+	return math.clamp(math.min(vp.X / 600, vp.Y / 450), 0.45, 1)
+end
+local function setOpen(v)
+	if busy or v == isOpen then return end
+	isOpen, busy = v, true
+	local base = fitScale()
+	if v then
+		main.Visible = true
+		if State.Anim then
+			scale.Scale = 0
+			tw(scale, .35, { Scale = base }, Enum.EasingStyle.Back):Play()
+			task.wait(.35)
+		else scale.Scale = base end
+	else
+		if State.Anim then
+			local t = tw(scale, .2, { Scale = 0 }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+			t:Play() t.Completed:Wait()
+		end
+		main.Visible = false
+	end
+	busy = false
+end
+openBtn.MouseButton1Click:Connect(function() setOpen(not isOpen) end)
+closeBtn.MouseButton1Click:Connect(function() setOpen(false) end)
+local minBtn = button(title, "–", UDim2.new(0, 28, 0, 28), UDim2.new(1, -70, 0, 6), "accent")
+minBtn.ZIndex = 4
+local minimized = false
+minBtn.MouseButton1Click:Connect(function()
+	minimized = not minimized
+	local target = minimized and UDim2.new(0, 560, 0, 40) or UDim2.new(0, 560, 0, 410)
+	if State.Anim then tw(main, .3, { Size = target }, Enum.EasingStyle.Quint):Play() else main.Size = target end
+	side.Visible = not minimized
+	content.Visible = not minimized
+end)
+UIS.InputBegan:Connect(function(i, gp)
+	if not gp and i.KeyCode == CONFIG.TOGGLE_KEY then setOpen(not isOpen) end
+end)
+
+-- PESTAÑAS -------------------------------------------------------------------
+local pages, tabs = {}, {}
+local function selectTab(name)
+	for n, p in pairs(pages) do
+		local vis = (n == name)
+		if vis and not p.Visible and State.Anim then
+			p.Position = UDim2.new(0, 20, 0, 0)
+			p.Visible = true
+			tw(p, .28, { Position = UDim2.new() }, Enum.EasingStyle.Quint):Play()
+		else
+			if vis then p.Position = UDim2.new() end
+			p.Visible = vis
+		end
+	end
+	for n, b in pairs(tabs) do
+		themed[b] = (n == name) and "accent" or "panel"
+		b.BackgroundTransparency = (n == name) and 0 or 0.4
+		local ind = b:FindFirstChild("Ind")
+		if ind then ind.Visible = (n == name) end
+	end
+	applyAll()
+end
+local function addTab(name, text, index)
+	local b = button(side, text, UDim2.new(1, -14, 0, 30), UDim2.new(0, 7, 0, 6 + (index - 1) * 34), "panel")
+	b.ZIndex = 4
+	local ind = new("Frame", { Name = "Ind", Size = UDim2.new(0, 3, 0.6, 0), Position = UDim2.new(0, 3, 0.2, 0), BackgroundColor3 = WHITE, BorderSizePixel = 0, Visible = false, ZIndex = 5 }, b)
+	round(ind, 2)
+	b.TextXAlignment = Enum.TextXAlignment.Left
+	new("UIPadding", { PaddingLeft = UDim.new(0, 10) }, b)
+	tabs[name] = b
+	b.MouseButton1Click:Connect(function() selectTab(name) end)
+end
+local function listPage(name)
+	local p = new("ScrollingFrame", {
+		Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, BorderSizePixel = 0, ScrollBarThickness = 3,
+		AutomaticCanvasSize = Enum.AutomaticSize.Y, CanvasSize = UDim2.new(), Visible = false, ZIndex = 3,
+	}, content)
+	new("UIListLayout", { Padding = UDim.new(0, 10), SortOrder = Enum.SortOrder.LayoutOrder }, p)
+	pages[name] = p
+	return p
+end
+local function framePage(name)
+	local p = new("Frame", { Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, Visible = false }, content)
+	pages[name] = p
+	return p
+end
+
+-- perfil (abajo del panel lateral)
+local thumbs = {}
+local function loadThumb(userId, img)
+	if thumbs[userId] then img.Image = thumbs[userId] return end
+	task.spawn(function()
+		local ok, c = pcall(function()
+			return Players:GetUserThumbnailAsync(userId, Enum.ThumbnailType.AvatarBust, Enum.ThumbnailSize.Size100x100)
+		end)
+		if ok then thumbs[userId] = c if img.Parent then img.Image = c end end
+	end)
+end
+do
+	local prof = new("Frame", { Size = UDim2.new(1, -14, 0, 46), Position = UDim2.new(0, 7, 1, -53), BackgroundTransparency = .4, BorderSizePixel = 0, ZIndex = 4 }, side)
+	round(prof, 10) theme(prof, "card")
+	local im = new("ImageLabel", { Size = UDim2.new(0, 34, 0, 34), Position = UDim2.new(0, 6, 0.5, -17), BackgroundColor3 = Color3.fromRGB(60, 60, 75), BorderSizePixel = 0, ZIndex = 5 }, prof)
+	round(im, 17)
+	loadThumb(lp.UserId, im)
+	local nm = new("TextLabel", {
+		Text = lp.DisplayName, Size = UDim2.new(1, -48, 1, 0), Position = UDim2.new(0, 46, 0, 0), BackgroundTransparency = 1,
+		Font = Enum.Font.GothamBold, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd, ZIndex = 5,
+	}, prof)
+	txt(nm)
+end
+
+-- PÁGINA: AJUSTES --------------------------------------------------------------
+local pSet = listPage("Ajustes")
+local cAp = card(pSet, "🎨 Apariencia")
+label(cAp, "Color del menú", 12, 16, true)
+palette(cAp, {
+	Color3.fromRGB(18, 20, 32), Color3.fromRGB(15, 35, 80), Color3.fromRGB(55, 22, 90), Color3.fromRGB(95, 20, 30),
+	Color3.fromRGB(15, 70, 45), Color3.fromRGB(115, 35, 85), Color3.fromRGB(125, 65, 15), Color3.fromRGB(225, 225, 235),
+}, "Menu")
+label(cAp, "Color de acento (botones, bordes)", 12, 16, true)
+palette(cAp, {
+	Color3.fromRGB(0, 140, 255), Color3.fromRGB(140, 90, 255), Color3.fromRGB(255, 80, 160), Color3.fromRGB(255, 70, 70),
+	Color3.fromRGB(255, 150, 40), Color3.fromRGB(255, 210, 60), Color3.fromRGB(50, 210, 120), Color3.fromRGB(40, 220, 230),
+}, "Accent")
+label(cAp, "Color del texto", 12, 16, true)
+palette(cAp, {
+	WHITE, Color3.new(0, 0, 0), Color3.fromRGB(255, 230, 80), Color3.fromRGB(80, 230, 255),
+	Color3.fromRGB(100, 255, 130), Color3.fromRGB(255, 90, 90), Color3.fromRGB(255, 120, 200), Color3.fromRGB(255, 160, 60),
+}, "Text")
+
+local cBg = card(pSet, "🖼 Fondo")
+label(cBg, "Pega el ID o link de una imagen SUBIDA a Roblox (los links externos como imgur no cargan en Roblox).", 11, 44, true)
+local bgBox = textbox(cBg, "ID de imagen (ej: 1234567890)")
+local bgRow = row(cBg, 32)
+local bgApply = button(bgRow, "Aplicar", UDim2.new(.5, -4, 1, 0), UDim2.new(0, 0, 0, 0))
+local bgClear = button(bgRow, "Quitar", UDim2.new(.5, -4, 1, 0), UDim2.new(.5, 4, 0, 0), "panel")
+bgApply.MouseButton1Click:Connect(function()
+	local s = bgBox.Text
+	if s:lower():find("^https?://") and not parseImage(s) then
+		notify("Roblox no carga links externos: sube la imagen y usa su ID")
+	elseif setBackground(s) then notify("Fondo aplicado")
+	else notify("ID de imagen no válido") end
+end)
+bgClear.MouseButton1Click:Connect(function() setBackground("") bgBox.Text = "" notify("Fondo quitado") end)
+slider(cBg, "Opacidad del fondo", 10, 100, 55, function(v) bgImg.ImageTransparency = 1 - v / 100 end)
+
+local cFx = card(pSet, "✨ Efectos")
+toggle(cFx, "Animaciones del menú", true, function(v) State.Anim = v end)
+toggle(cFx, "Borde arcoíris", false, function(v) State.Rainbow = v applyAll() end)
+toggle(cFx, "Brillos decorativos", true, function(v) orbs.Visible = v end)
+
+-- PÁGINA: TELEPORT ---------------------------------------------------------------
+local pTp = framePage("Teleport")
+local tpSearch = textbox(pTp, "🔍 Buscar jugador...")
+tpSearch.Size = UDim2.new(1, -8, 0, 32)
+local tpHolder = new("Frame", { Size = UDim2.new(1, 0, 1, -40), Position = UDim2.new(0, 0, 0, 40), BackgroundTransparency = 1 }, pTp)
+
+local function playerList(parent, actionText, cb)
+	local list = new("ScrollingFrame", {
+		Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, BorderSizePixel = 0, ScrollBarThickness = 3,
+		AutomaticCanvasSize = Enum.AutomaticSize.Y, CanvasSize = UDim2.new(),
+	}, parent)
+	new("UIListLayout", { Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder }, list)
+	local filter = ""
+	local obj = {}
+	function obj.refresh(exclude)
+		for _, c in ipairs(list:GetChildren()) do if c:IsA("GuiObject") then c:Destroy() end end
+		local n = 0
+		for _, p in ipairs(Players:GetPlayers()) do
+			local hay = (p.DisplayName .. " " .. p.Name):lower()
+			if p ~= lp and p ~= exclude and (filter == "" or hay:find(filter, 1, true)) then
+				n += 1
+				local r = new("Frame", { Size = UDim2.new(1, -8, 0, 54), BorderSizePixel = 0, BackgroundTransparency = .25, LayoutOrder = n }, list)
+				round(r, 10) theme(r, "card")
+				new("UIStroke", { Color = WHITE, Transparency = .9, Thickness = 1 }, r)
+				local img = new("ImageLabel", {
+					Size = UDim2.new(0, 42, 0, 42), Position = UDim2.new(0, 6, 0, 6), BackgroundColor3 = Color3.fromRGB(60, 60, 75), BorderSizePixel = 0,
+				}, r)
+				round(img, 21)
+				loadThumb(p.UserId, img)
+				local nm = new("TextLabel", {
+					Text = p.DisplayName .. "\n@" .. p.Name, Size = UDim2.new(1, -135, 1, 0), Position = UDim2.new(0, 56, 0, 0),
+					BackgroundTransparency = 1, Font = Enum.Font.GothamBold, TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left,
+					TextTruncate = Enum.TextTruncate.AtEnd,
+				}, r)
+				txt(nm)
+				local b = button(r, actionText, UDim2.new(0, 64, 0, 30), UDim2.new(1, -72, 0.5, -15))
+				b.MouseButton1Click:Connect(function() cb(p) end)
+			end
+		end
+		if n == 0 then
+			local e = new("TextLabel", {
+				Text = "No hay jugadores", Size = UDim2.new(1, 0, 0, 30), BackgroundTransparency = 1, Font = Enum.Font.Gotham, TextSize = 13,
+			}, list)
+			txt(e)
+		end
+	end
+	function obj.setFilter(s) filter = s:lower() obj.refresh() end
+	Players.PlayerAdded:Connect(function() task.wait(.3) obj.refresh() end)
+	Players.PlayerRemoving:Connect(function(p) obj.refresh(p) end)
+	obj.refresh()
+	return obj
+end
+
+local tpList = playerList(tpHolder, "Ir", function(p)
+	local mine = lp.Character and lp.Character:FindFirstChild("HumanoidRootPart")
+	local theirs = p.Character and p.Character:FindFirstChild("HumanoidRootPart")
+	if mine and theirs then
+		mine.CFrame = theirs.CFrame * CFrame.new(3, 0, 0)
+		notify("Teleport a " .. p.DisplayName)
+	else
+		notify("No se pudo teletransportar")
+	end
+end)
+tpSearch:GetPropertyChangedSignal("Text"):Connect(function() tpList.setFilter(tpSearch.Text) end)
+
+-- PÁGINA: VOLAR ---------------------------------------------------------------------
+local pFly = listPage("Volar")
+local flying, flySpeed, bv, bg, flyConn = false, 10, nil, nil, nil
+local controls
+pcall(function() controls = require(lp:WaitForChild("PlayerScripts"):WaitForChild("PlayerModule")):GetControls() end)
+
+local function moveVec()
+	if controls then return controls:GetMoveVector() end
+	local x, z = 0, 0
+	if UIS:IsKeyDown(Enum.KeyCode.W) then z -= 1 end
+	if UIS:IsKeyDown(Enum.KeyCode.S) then z += 1 end
+	if UIS:IsKeyDown(Enum.KeyCode.A) then x -= 1 end
+	if UIS:IsKeyDown(Enum.KeyCode.D) then x += 1 end
+	return Vector3.new(x, 0, z)
+end
+local function stopFly()
+	flying = false
+	if flyConn then flyConn:Disconnect() flyConn = nil end
+	if bv then bv:Destroy() bv = nil end
+	if bg then bg:Destroy() bg = nil end
+	local hum = lp.Character and lp.Character:FindFirstChildOfClass("Humanoid")
+	if hum then hum.PlatformStand = false end
+end
+local function startFly()
+	local char = lp.Character
+	local hrp = char and char:FindFirstChild("HumanoidRootPart")
+	local hum = char and char:FindFirstChildOfClass("Humanoid")
+	if not hrp or not hum then return false end
+	flying = true
+	hum.PlatformStand = true
+	bv = new("BodyVelocity", { MaxForce = Vector3.one * 1e9, Velocity = Vector3.zero }, hrp)
+	bg = new("BodyGyro", { MaxTorque = Vector3.one * 1e9, P = 1e4, CFrame = hrp.CFrame }, hrp)
+	flyConn = RunService.RenderStepped:Connect(function()
+		local cam = camNow()
+		local dir = cam.CFrame:VectorToWorldSpace(moveVec())
+		local vert = 0
+		if UIS:IsKeyDown(Enum.KeyCode.Space) or UIS:IsKeyDown(Enum.KeyCode.E) then vert += 1 end
+		if UIS:IsKeyDown(Enum.KeyCode.LeftShift) or UIS:IsKeyDown(Enum.KeyCode.Q) then vert -= 1 end
+		dir += Vector3.new(0, vert, 0)
+		if dir.Magnitude > 1 then dir = dir.Unit end
+		bv.Velocity = dir * flySpeed * 2
+		bg.CFrame = cam.CFrame
+	end)
+	return true
+end
+
+local cFly = card(pFly, "🕊 Vuelo")
+local setFly = toggle(cFly, "Activar vuelo", false, function(on)
+	if on then
+		if not startFly() then notify("Espera a que cargue tu personaje") end
+	else stopFly() end
+end)
+slider(cFly, "Velocidad de vuelo (1-50)", 1, 50, 10, function(v) flySpeed = v end)
+label(cFly, "WASD / joystick: mover hacia donde miras\nEspacio o E: subir  •  Shift o Q: bajar", 11, 32, true)
+
+-- PÁGINA: JUGADOR (speed, salto, noclip...) ------------------------------------------------
+local pPl = listPage("Jugador")
+local speedOn, jumpOn, infJump, noclip = false, false, false, false
+local customSpeed, customJump = 16, 50
+
+local cMove = card(pPl, "🏃 Movimiento")
+local setSpeed = slider(cMove, "Velocidad al caminar", 16, 200, 16, function(v, u)
+	customSpeed = v
+	if u then speedOn = true end
+end)
+local setJump = slider(cMove, "Fuerza de salto", 50, 300, 50, function(v, u)
+	customJump = v
+	if u then jumpOn = true end
+end)
+local setInf = toggle(cMove, "Salto infinito", false, function(v) infJump = v end)
+local setClip = toggle(cMove, "Noclip (atravesar paredes)", false, function(v) noclip = v end)
+
+local cWorld = card(pPl, "🌍 Mundo y cámara")
+local defaultGravity = math.floor(workspace.Gravity + 0.5)
+local setGrav = slider(cWorld, "Gravedad", 0, 400, defaultGravity, function(v, u) if u then workspace.Gravity = v end end)
+local setFov = slider(cWorld, "Campo de visión (FOV)", 30, 120, 70, function(v, u) if u then camNow().FieldOfView = v end end)
+local resetBtn = button(cWorld, "↺ Restablecer todo", UDim2.new(1, 0, 0, 32), nil, "panel")
+resetBtn.LayoutOrder = nextOrder()
+resetBtn.MouseButton1Click:Connect(function()
+	speedOn, jumpOn = false, false
+	setSpeed(16, false) setJump(50, false)
+	setInf(false) setClip(false)
+	setGrav(defaultGravity, false) workspace.Gravity = defaultGravity
+	setFov(70, false) camNow().FieldOfView = 70
+	local hum = lp.Character and lp.Character:FindFirstChildOfClass("Humanoid")
+	if hum then hum.WalkSpeed = 16 hum.JumpPower = 50 end
+	notify("Valores restablecidos")
+end)
+
+UIS.JumpRequest:Connect(function()
+	if infJump then
+		local hum = lp.Character and lp.Character:FindFirstChildOfClass("Humanoid")
+		if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end
+	end
+end)
+RunService.Stepped:Connect(function()
+	if noclip and lp.Character then
+		for _, p in ipairs(lp.Character:GetDescendants()) do
+			if p:IsA("BasePart") and p.CanCollide then p.CanCollide = false end
+		end
+	end
+end)
+
+-- PÁGINA: AVATAR (ejecutar por ID, solo lo ves tú) ------------------------------------------
+local pAv = listPage("Avatar")
+local wearing = nil -- userId del avatar copiado (nil = el real)
+
+local InsertService = game:GetService("InsertService")
+
+-- carga un asset (intenta varios métodos, todo protegido con pcall)
+local function loadAsset(id)
+	if not id or id == 0 then return nil end
+	local ok, res = pcall(function() return InsertService:LoadAsset(id) end)
+	if ok and res then return res end
+	local ok2, res2 = pcall(function() return game:GetObjects("rbxassetid://" .. id) end)
+	if ok2 and res2 and res2[1] then
+		local m = Instance.new("Model")
+		for _, o in ipairs(res2) do o.Parent = m end
+		return m
+	end
+	return nil
+end
+
+local function findAtt(char, name)
+	for _, part in ipairs(char:GetChildren()) do
+		if part:IsA("BasePart") then
+			local a = part:FindFirstChild(name)
+			if a and a:IsA("Attachment") then return a end
+		end
+	end
+end
+
+local function accKey(acc)
+	local h = acc:FindFirstChild("Handle")
+	local m = ""
+	if h then
+		if h:IsA("MeshPart") then m = h.MeshId
+		else
+			local sm = h:FindFirstChildWhichIsA("SpecialMesh")
+			if sm then m = sm.MeshId end
+		end
+	end
+	return acc.Name .. "|" .. m
+end
+
+-- pega un accesorio a mano (funciona en el cliente)
+local function attachAccessory(char, acc)
+	local handle = acc:FindFirstChild("Handle")
+	if not handle or not handle:IsA("BasePart") then acc:Destroy() return false end
+	handle.Anchored = false
+	handle.CanCollide = false
+	handle.Massless = true
+	local att = handle:FindFirstChildOfClass("Attachment")
+	local weld = Instance.new("Weld")
+	weld.Name = "AccessoryWeld"
+	if att then
+		local target = findAtt(char, att.Name)
+		if not target then acc:Destroy() return false end
+		weld.Part0 = handle
+		weld.C0 = att.CFrame
+		weld.Part1 = target.Parent
+		weld.C1 = target.CFrame
+		handle.CFrame = target.Parent.CFrame * target.CFrame * att.CFrame:Inverse()
+	else
+		local head = char:FindFirstChild("Head")
+		if not head then acc:Destroy() return false end
+		weld.Part0 = head
+		weld.C0 = CFrame.new(0, 0.5, 0)
+		weld.Part1 = handle
+		weld.C1 = acc.AttachmentPoint
+	end
+	weld.Parent = handle
+	acc.Parent = char
+	return true
+end
+
+-- CARA ---------------------------------------------------------------------
+local DEFAULT_FACE = "rbxasset://textures/face.png"
+local function applyFace(char, faceId)
+	local head = char:FindFirstChild("Head")
+	if not head then return false end
+	local decal
+	for _, d in ipairs(head:GetChildren()) do
+		if d:IsA("Decal") then decal = decal or d end
+	end
+	if not decal then
+		decal = Instance.new("Decal")
+		decal.Name = "face"
+		decal.Face = Enum.NormalId.Front
+		decal.Parent = head
+	end
+	if not faceId or faceId == 0 then
+		decal.Texture = DEFAULT_FACE
+		return true
+	end
+	local tex
+	local fm = loadAsset(faceId)
+	if fm then
+		local d = fm:FindFirstChildWhichIsA("Decal", true)
+		if d then tex = d.Texture end
+		fm:Destroy()
+	end
+	decal.Texture = tex or ("rbxassetid://" .. faceId)
+	return true
+end
+
+-- ANIMACIONES ------------------------------------------------------------------
+local animFields = { "IdleAnimation", "WalkAnimation", "RunAnimation", "JumpAnimation", "FallAnimation", "ClimbAnimation", "SwimAnimation" }
+local animSnap = setmetatable({}, { __mode = "k" })
+
+local function snapAnimate(animate)
+	if animSnap[animate] then return end
+	local s = {}
+	for _, a in ipairs(animate:GetDescendants()) do
+		if a:IsA("Animation") then s[a] = a.AnimationId end
+	end
+	animSnap[animate] = s
+end
+local function restoreAnimate(animate)
+	local s = animSnap[animate]
+	if not s then return end
+	for a, id in pairs(s) do if a.Parent then a.AnimationId = id end end
+end
+local function restartAnimate(animate, hum)
+	animate.Disabled = true
+	local src = hum:FindFirstChildOfClass("Animator") or hum
+	pcall(function()
+		for _, tr in ipairs(src:GetPlayingAnimationTracks()) do tr:Stop() end
+	end)
+	task.wait()
+	animate.Disabled = false
+end
+local function applyPack(animate, pack)
+	local n = 0
+	for _, anim in ipairs(pack:GetDescendants()) do
+		if anim:IsA("Animation") and anim.Parent then
+			local set = animate:FindFirstChild(anim.Parent.Name)
+			local t = set and set:FindFirstChild(anim.Name)
+			if t and t:IsA("Animation") then
+				t.AnimationId = anim.AnimationId
+				n += 1
+			end
+		end
+	end
+	return n
+end
+
+-- COPIAR AVATAR COMPLETO ---------------------------------------------------------
+-- devuelve (éxito, {acc=, face=, anim=})
+local function copyAvatar(userId)
+	local char = lp.Character
+	local hum = char and char:FindFirstChildOfClass("Humanoid")
+	local rep = { acc = 0, face = false, anim = 0 }
+	if not hum then return false, rep end
+	local animate = char:FindFirstChild("Animate")
+	if animate then snapAnimate(animate) end
+	local mine = (userId == lp.UserId)
+	local base = false
+	local worn = {}
+
+	-- 1) apariencia: ropa, colores, accesorios, cabeza
+	local ok, model = pcall(function() return Players:GetCharacterAppearanceAsync(userId) end)
+	if ok and model then
+		for _, v in ipairs(char:GetChildren()) do
+			if v:IsA("Accessory") or v:IsA("Shirt") or v:IsA("Pants") or v:IsA("ShirtGraphic") or v:IsA("BodyColors") then
+				v:Destroy()
+			end
+		end
+		local head = char:FindFirstChild("Head")
+		for _, v in ipairs(model:GetChildren()) do
+			if v:IsA("Accessory") then
+				local key = accKey(v)
+				if attachAccessory(char, v) then rep.acc += 1 worn[key] = true end
+			elseif v:IsA("Shirt") or v:IsA("Pants") or v:IsA("ShirtGraphic") or v:IsA("BodyColors") then
+				v.Parent = char
+			elseif v.Name == "Head" and head then
+				local mesh = v:FindFirstChildWhichIsA("SpecialMesh")
+				if mesh then
+					local old = head:FindFirstChildWhichIsA("SpecialMesh")
+					if old then old:Destroy() end
+					mesh.Parent = head
+				end
+			end
+		end
+		model:Destroy()
+		base = true
+	end
+
+	-- 2) descripción: cara, accesorios que faltan, cabeza y animaciones
+	local ok2, desc = pcall(function() return Players:GetHumanoidDescriptionFromUserId(userId) end)
+	if ok2 and desc then
+		if not base then
+			base = (pcall(function() hum:ApplyDescription(desc) end))
+		end
+
+		-- cara
+		rep.face = applyFace(char, desc.Face)
+
+		-- accesorios que faltaron (todos los tipos)
+		local okL, list = pcall(function() return desc:GetAccessories(true) end)
+		if okL and list then
+			for _, a in ipairs(list) do
+				local asset = loadAsset(a.AssetId)
+				if asset then
+					local acc = asset:FindFirstChildWhichIsA("Accessory", true)
+					if acc then
+						local key = accKey(acc)
+						if worn[key] then
+							acc:Destroy()
+						elseif attachAccessory(char, acc) then
+							rep.acc += 1 worn[key] = true
+						end
+					end
+					asset:Destroy()
+				end
+			end
+		end
+
+		-- forma de cabeza (cabezas clásicas)
+		if desc.Head and desc.Head ~= 0 then
+			local hm = loadAsset(desc.Head)
+			local headPart = char:FindFirstChild("Head")
+			if hm and headPart then
+				local mesh = hm:FindFirstChildWhichIsA("SpecialMesh", true)
+				if mesh then
+					local old = headPart:FindFirstChildWhichIsA("SpecialMesh")
+					if old then old:Destroy() end
+					mesh:Clone().Parent = headPart
+				end
+			end
+			if hm then hm:Destroy() end
+		end
+
+		-- animaciones
+		if animate then
+			if mine then
+				restoreAnimate(animate)
+				restartAnimate(animate, hum)
+			else
+				for _, field in ipairs(animFields) do
+					local id = desc[field]
+					if id and id ~= 0 then
+						local pack = loadAsset(id)
+						if pack then
+							rep.anim += applyPack(animate, pack)
+							pack:Destroy()
+						end
+					end
+				end
+				if rep.anim > 0 then restartAnimate(animate, hum) end
+			end
+		end
+	end
+
+	return base, rep
+end
+
+local cAv = card(pAv, "👤 Ejecutar avatar")
+label(cAv, "Escribe el ID (o el nombre de usuario) de cualquier jugador. Solo TÚ ves el cambio; los demás te ven normal.", 11, 44, true)
+local idBox = textbox(cAv, "ID del jugador (ej: 1)")
+local prev = row(cAv, 52)
+local prevImg = new("ImageLabel", { Size = UDim2.new(0, 46, 0, 46), Position = UDim2.new(0, 0, 0, 3), BackgroundColor3 = Color3.fromRGB(60, 60, 75), BorderSizePixel = 0 }, prev)
+round(prevImg, 23)
+local prevTxt = new("TextLabel", {
+	Text = "Sin avatar ejecutado", Size = UDim2.new(1, -56, 1, 0), Position = UDim2.new(0, 56, 0, 0), BackgroundTransparency = 1,
+	Font = Enum.Font.GothamBold, TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left, TextWrapped = true,
+}, prev)
+txt(prevTxt)
+local avRow = row(cAv, 34)
+local execBtn = button(avRow, "▶ Ejecutar", UDim2.new(.5, -4, 1, 0), UDim2.new(0, 0, 0, 0))
+local backBtn = button(avRow, "↩ Mi avatar", UDim2.new(.5, -4, 1, 0), UDim2.new(.5, 4, 0, 0), "panel")
+
+local function showPreview(userId, text)
+	prevTxt.Text = text
+	loadThumb(userId, prevImg)
+end
+
+execBtn.MouseButton1Click:Connect(function()
+	local input = idBox.Text:gsub("%s", "")
+	task.spawn(function()
+		if input == "" then notify("Escribe un ID o nombre") return end
+		local uid = tonumber(input)
+		if not uid then
+			local ok, r = pcall(function() return Players:GetUserIdFromNameAsync(input) end)
+			if ok then uid = r end
+		end
+		if not uid then notify("ID o nombre no válido") return end
+		notify("Cargando avatar...")
+		local okc, rep = copyAvatar(uid)
+		if okc then
+			wearing = uid
+			local ok, name = pcall(function() return Players:GetNameFromUserIdAsync(uid) end)
+			showPreview(uid, "Llevas el avatar de\n" .. (ok and name or tostring(uid)))
+			notify("✔ Accesorios: " .. rep.acc .. " · Cara: " .. (rep.face and "sí" or "no") .. " · Anim: " .. rep.anim)
+		else
+			notify("No se pudo cargar ese avatar")
+		end
+	end)
+end)
+backBtn.MouseButton1Click:Connect(function()
+	task.spawn(function()
+		wearing = nil
+		if copyAvatar(lp.UserId) then
+			showPreview(lp.UserId, "Tu avatar real")
+			notify("Avatar real restaurado")
+		else
+			notify("No se pudo restaurar")
+		end
+	end)
+end)
+
+do
+-- ============================ NUEVAS FUNCIONES (v3) ============================
+local Lighting = game:GetService("Lighting")
+local TeleportService = game:GetService("TeleportService")
+local VirtualUser = game:GetService("VirtualUser")
+local mouse = lp:GetMouse()
+
+-- HUD de FPS / Ping
+local hud = new("Frame", { Size = UDim2.new(0, 170, 0, 28), Position = UDim2.new(1, -180, 0, 56), BackgroundTransparency = .25, BorderSizePixel = 0, Visible = false }, gui)
+round(hud, 8) theme(hud, "bg")
+new("UIStroke", { Color = WHITE, Transparency = .85, Thickness = 1 }, hud)
+local hudTxt = new("TextLabel", { Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, Font = Enum.Font.GothamBold, TextSize = 12, Text = "FPS: -- | Ping: --" }, hud)
+txt(hudTxt)
+local fpsAcc, fpsN = 0, 0
+RunService.RenderStepped:Connect(function(dt) fpsAcc += dt fpsN += 1 end)
+task.spawn(function()
+	while true do
+		task.wait(.5)
+		if hud.Visible and fpsN > 0 then
+			local fps = math.floor(fpsN / fpsAcc + .5)
+			local ping = math.floor(lp:GetNetworkPing() * 2000)
+			hudTxt.Text = ("FPS: %d  |  Ping: %d ms"):format(fps, ping)
+		end
+		fpsAcc, fpsN = 0, 0
+	end
+end)
+
+-- PÁGINA: VISUAL ------------------------------------------------------------------
+local pVis = listPage("Visual")
+local espOn, espNames = false, false
+local espObjs = {}
+
+local function clearESP(p)
+	local o = espObjs[p]
+	if o then
+		for _, i in pairs(o) do if typeof(i) == "Instance" then i:Destroy() end end
+		espObjs[p] = nil
+	end
+end
+local function buildESP(p)
+	clearESP(p)
+	local ch = p.Character
+	if not ch then return end
+	local head = ch:FindFirstChild("Head")
+	local o = {}
+	if espOn then
+		o.hl = new("Highlight", { FillColor = State.Accent, FillTransparency = .6, OutlineColor = WHITE, DepthMode = Enum.HighlightDepthMode.AlwaysOnTop }, ch)
+	end
+	if espNames and head then
+		local bb = new("BillboardGui", { Size = UDim2.new(0, 170, 0, 30), StudsOffset = Vector3.new(0, 2.6, 0), AlwaysOnTop = true, Adornee = head }, head)
+		o.bb = bb
+		o.label = new("TextLabel", {
+			Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, Font = Enum.Font.GothamBold, TextSize = 13,
+			TextColor3 = WHITE, TextStrokeTransparency = .4, Text = p.DisplayName,
+		}, bb)
+	end
+	espObjs[p] = o
+end
+local function refreshESP()
+	for _, p in ipairs(Players:GetPlayers()) do
+		if p ~= lp then
+			if espOn or espNames then buildESP(p) else clearESP(p) end
+		end
+	end
+end
+local function hookPlayer(p)
+	if p == lp then return end
+	p.CharacterAdded:Connect(function()
+		task.wait(.6)
+		if espOn or espNames then buildESP(p) end
+	end)
+end
+for _, p in ipairs(Players:GetPlayers()) do hookPlayer(p) end
+Players.PlayerAdded:Connect(hookPlayer)
+Players.PlayerRemoving:Connect(clearESP)
+task.spawn(function()
+	while true do
+		task.wait(.25)
+		local myHrp = lp.Character and lp.Character:FindFirstChild("HumanoidRootPart")
+		for p, o in pairs(espObjs) do
+			if o.label and o.label.Parent then
+				local hrp = p.Character and p.Character:FindFirstChild("HumanoidRootPart")
+				local d = (myHrp and hrp) and math.floor((myHrp.Position - hrp.Position).Magnitude) or 0
+				o.label.Text = p.DisplayName .. "  [" .. d .. "m]"
+			end
+		end
+	end
+end)
+
+local cEsp = card(pVis, "👁 ESP de jugadores")
+toggle(cEsp, "Resaltar jugadores", false, function(v) espOn = v refreshESP() end)
+toggle(cEsp, "Nombres y distancia", false, function(v) espNames = v refreshESP() end)
+label(cEsp, "Solo lo ves tú.", 11, 16, true)
+
+local cLight = card(pVis, "💡 Iluminación y cámara")
+local origLight = {
+	Brightness = Lighting.Brightness, ClockTime = Lighting.ClockTime, FogEnd = Lighting.FogEnd,
+	GlobalShadows = Lighting.GlobalShadows, Ambient = Lighting.Ambient, OutdoorAmbient = Lighting.OutdoorAmbient,
+}
+toggle(cLight, "Fullbright (todo iluminado)", false, function(v)
+	if v then
+		Lighting.Brightness = 2 Lighting.ClockTime = 14 Lighting.FogEnd = 1e5 Lighting.GlobalShadows = false
+		Lighting.Ambient = Color3.fromRGB(178, 178, 178) Lighting.OutdoorAmbient = Color3.fromRGB(178, 178, 178)
+	else
+		for k, val in pairs(origLight) do Lighting[k] = val end
+	end
+end)
+slider(cLight, "Hora del día", 0, 24, math.floor(Lighting.ClockTime), function(v, u) if u then Lighting.ClockTime = v end end)
+slider(cLight, "Zoom máximo de cámara", 10, 1000, math.floor(lp.CameraMaxZoomDistance), function(v, u) if u then lp.CameraMaxZoomDistance = v end end)
+
+-- PÁGINA: UTILIDADES --------------------------------------------------------------
+local pUt = listPage("Utilidades")
+local clickTp, antiAfk, savedCF = false, false, nil
+
+local cTools = card(pUt, "🛠 Herramientas")
+toggle(cTools, "Click TP (Ctrl + clic)", false, function(v) clickTp = v end)
+toggle(cTools, "Anti-AFK", false, function(v) antiAfk = v end)
+toggle(cTools, "Mostrar FPS y ping", false, function(v) hud.Visible = v end)
+
+UIS.InputBegan:Connect(function(i, gp)
+	if clickTp and not gp and i.UserInputType == Enum.UserInputType.MouseButton1 and UIS:IsKeyDown(Enum.KeyCode.LeftControl) then
+		local hrp = lp.Character and lp.Character:FindFirstChild("HumanoidRootPart")
+		if hrp and mouse.Hit then hrp.CFrame = CFrame.new(mouse.Hit.Position + Vector3.new(0, 3, 0)) end
+	end
+end)
+lp.Idled:Connect(function()
+	if antiAfk then
+		VirtualUser:CaptureController()
+		VirtualUser:ClickButton2(Vector2.new())
+	end
+end)
+
+local cPos = card(pUt, "📌 Posición guardada")
+local posRow = row(cPos, 34)
+local saveBtn = button(posRow, "💾 Guardar", UDim2.new(.5, -4, 1, 0), UDim2.new(0, 0, 0, 0))
+local goBtn = button(posRow, "↩ Volver", UDim2.new(.5, -4, 1, 0), UDim2.new(.5, 4, 0, 0), "panel")
+saveBtn.MouseButton1Click:Connect(function()
+	local hrp = lp.Character and lp.Character:FindFirstChild("HumanoidRootPart")
+	if hrp then savedCF = hrp.CFrame notify("Posición guardada") end
+end)
+goBtn.MouseButton1Click:Connect(function()
+	local hrp = lp.Character and lp.Character:FindFirstChild("HumanoidRootPart")
+	if hrp and savedCF then hrp.CFrame = savedCF notify("Volviste a tu posición") else notify("No hay posición guardada") end
+end)
+
+local cExtra = card(pUt, "⚙ Extras")
+local exRow = row(cExtra, 34)
+local sitBtn = button(exRow, "🪑 Sentarse", UDim2.new(.5, -4, 1, 0), UDim2.new(0, 0, 0, 0))
+local rejoinBtn = button(exRow, "🔄 Reentrar", UDim2.new(.5, -4, 1, 0), UDim2.new(.5, 4, 0, 0), "panel")
+sitBtn.MouseButton1Click:Connect(function()
+	local hum = lp.Character and lp.Character:FindFirstChildOfClass("Humanoid")
+	if hum then hum.Sit = true end
+end)
+rejoinBtn.MouseButton1Click:Connect(function()
+	notify("Reentrando al servidor...")
+	pcall(function()
+		if #Players:GetPlayers() <= 1 then
+			TeleportService:Teleport(game.PlaceId, lp)
+		else
+			TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, lp)
+		end
+	end)
+end)
+
+local cInfo = card(pUt, "ℹ Servidor")
+local infoLbl = label(cInfo, "", 12, 52, true)
+local function fmtTime(s)
+	s = math.floor(s)
+	return ("%02d:%02d:%02d"):format(s // 3600, (s % 3600) // 60, s % 60)
+end
+task.spawn(function()
+	while true do
+		task.wait(1)
+		if isOpen then
+			local job = game.JobId ~= "" and game.JobId:sub(1, 8) or "Studio"
+			infoLbl.Text = ("Jugadores: %d/%d\nTiempo del servidor: %s\nJobId: %s"):format(#Players:GetPlayers(), Players.MaxPlayers, fmtTime(workspace.DistributedGameTime), job)
+		end
+	end
+end)
+
+-- PÁGINA: ESPECTAR ----------------------------------------------------------------
+local pSpec = framePage("Espectar")
+local specStop = button(pSpec, "⏹ Dejar de espectar", UDim2.new(1, -8, 0, 32), UDim2.new(0, 0, 0, 0))
+local specHolder = new("Frame", { Size = UDim2.new(1, 0, 1, -38), Position = UDim2.new(0, 0, 0, 38), BackgroundTransparency = 1 }, pSpec)
+local function stopSpec()
+	local hum = lp.Character and lp.Character:FindFirstChildOfClass("Humanoid")
+	if hum then camNow().CameraSubject = hum end
+end
+specStop.MouseButton1Click:Connect(function() stopSpec() notify("Dejaste de espectar") end)
+playerList(specHolder, "Ver", function(p)
+	local hum = p.Character and p.Character:FindFirstChildOfClass("Humanoid")
+	if hum then
+		camNow().CameraSubject = hum
+		notify("Espectando a " .. p.DisplayName)
+	else
+		notify("Ese jugador no tiene personaje")
+	end
+end)
+
+end
+
+-- ================================ SHOP (catálogo) ================================
+do
+local AES = game:GetService("AvatarEditorService")
+local MarketplaceService = game:GetService("MarketplaceService")
+
+local pShop = framePage("Shop")
+local wornShop, wornItems, slots, cardStrokes = {}, {}, {}, {}
+local shopPages, shopLoading, shopCount = nil, false, 0
+local catIndex, sortIndex, keyword = 1, 1, ""
+local loadedOnce = false
+
+local function enumList(kind, names)
+	local out = {}
+	for _, n in ipairs(names) do
+		local ok, v = pcall(function() return Enum[kind][n] end)
+		if ok and v then table.insert(out, v) end
+	end
+	return out
+end
+
+local CATS = {
+	{ "✨ Todo", {} },
+	{ "👕 Camisetas", { assets = { "Shirt", "TShirt" } } },
+	{ "👖 Pantalones", { assets = { "Pants" } } },
+	{ "🎩 Sombreros", { assets = { "Hat" } } },
+	{ "💇 Pelo", { assets = { "Hair" } } },
+	{ "🙂 Caras", { assets = { "Face" } } },
+	{ "🎒 Accesorios", { assets = { "FaceAccessory", "NeckAccessory", "ShoulderAccessory", "FrontAccessory", "BackAccessory", "WaistAccessory" } } },
+	{ "📦 Paquetes", { bundles = { "BodyParts", "DynamicHead", "DynamicHeadAvatar", "Shoes" } } },
+	{ "🏃 Animaciones", { bundles = { "Animations" } } },
+	{ "🌟 UGC", { filter = "CommunityCreations" } },
+}
+local SORTS = {
+	{ "Relevancia", "Relevance" }, { "Más vendidos", "Bestselling" }, { "Recientes", "RecentlyCreated" },
+	{ "Favoritos", "MostFavorited" }, { "Precio ↑", "PriceLowToHigh" },
+}
+-- tipo de asset (AssetTypeId) -> accesorio / animación
+local ACC_MAP = {
+	[8] = { "Hat" }, [41] = { "Hair" }, [42] = { "Face" }, [43] = { "Neck" }, [44] = { "Shoulder" }, [45] = { "Front" },
+	[46] = { "Back" }, [47] = { "Waist" }, [64] = { "TShirt", true }, [65] = { "Shirt", true }, [66] = { "Pants", true },
+	[67] = { "Jacket", true }, [68] = { "Sweater", true }, [69] = { "Shorts", true }, [70] = { "LeftShoe", true },
+	[71] = { "RightShoe", true }, [72] = { "DressSkirt", true },
+}
+local slotFor = {
+	[55] = { "walk", "WalkAnim", "WalkAnimation" }, [53] = { "run", "RunAnim", "RunAnimation" },
+	[52] = { "jump", "JumpAnim", "JumpAnimation" }, [50] = { "fall", "FallAnim", "FallAnimation" },
+	[48] = { "climb", "ClimbAnim", "ClimbAnimation" }, [51] = { "idle", "Animation1", "IdleAnimation" },
+	[54] = { "swim", "Swim", "SwimAnimation" },
+}
+
+local function keyOf(it) return tostring(it.ItemType) .. ":" .. tostring(it.Id) end
+local function isBundleItem(it) return tostring(it.ItemType):find("Bundle") ~= nil end
+
+-- ===== motor de "probar" =====
+local function newRec() return { objs = {}, cloth = {}, anim = {}, face = nil, parts = 0 } end
+
+local function wearCloth(char, o, rec)
+	local cls = o.ClassName
+	local slot = slots[cls]
+	if slot then
+		if slot.cur and slot.cur.Parent then slot.cur:Destroy() end
+	else
+		local old = char:FindFirstChildOfClass(cls)
+		if old then old.Parent = nil end
+		slot = { orig = old }
+		slots[cls] = slot
+	end
+	slot.cur = o
+	o.Parent = char
+	table.insert(rec.cloth, o)
+end
+
+local function setAnim(rec, target, id)
+	if rec.anim[target] == nil then rec.anim[target] = target.AnimationId end
+	target.AnimationId = id
+end
+
+local function applyPackRec(animate, pack, rec)
+	local n = 0
+	for _, anim in ipairs(pack:GetDescendants()) do
+		if anim:IsA("Animation") and anim.Parent then
+			local set = animate:FindFirstChild(anim.Parent.Name)
+			local t = set and set:FindFirstChild(anim.Name)
+			if t and t:IsA("Animation") then setAnim(rec, t, anim.AnimationId) n += 1 end
+		end
+	end
+	return n
+end
+
+local function harvest(char, container, rec, tid)
+	local got = false
+	local hum = char:FindFirstChildOfClass("Humanoid")
+	local animate = char:FindFirstChild("Animate")
+	local hasAnim = false
+	local descs = container:GetDescendants()
+	for _, o in ipairs(descs) do
+		if o:IsA("Accessory") then
+			if attachAccessory(char, o) then table.insert(rec.objs, o) got = true end
+		elseif o:IsA("Shirt") or o:IsA("Pants") or o:IsA("ShirtGraphic") then
+			wearCloth(char, o, rec) got = true
+		elseif o:IsA("Animation") then
+			hasAnim = true
+		end
+	end
+	if not got and not hasAnim then
+		local d = container:FindFirstChildWhichIsA("Decal", true)
+		local head = char:FindFirstChild("Head")
+		if d and head then
+			local hd = head:FindFirstChildWhichIsA("Decal")
+			if not hd then
+				hd = Instance.new("Decal") hd.Name = "face" hd.Face = Enum.NormalId.Front hd.Parent = head
+			end
+			if not rec.face then rec.face = { decal = hd, old = hd.Texture } end
+			hd.Texture = d.Texture
+			got = true
+		end
+	end
+	if hasAnim and animate and hum then
+		snapAnimate(animate)
+		local n = applyPackRec(animate, container, rec)
+		local s = slotFor[tid]
+		if n == 0 and s then
+			local anims = {}
+			for _, o in ipairs(descs) do if o:IsA("Animation") then table.insert(anims, o) end end
+			local set = animate:FindFirstChild(s[1])
+			local t = set and set:FindFirstChild(s[2])
+			if t and anims[1] then
+				setAnim(rec, t, anims[1].AnimationId) n = 1
+				if s[1] == "idle" then
+					local t2 = set:FindFirstChild("Animation2")
+					if t2 then setAnim(rec, t2, (anims[2] or anims[1]).AnimationId) end
+				end
+			end
+		end
+		if n > 0 then restartAnimate(animate, hum) got = true end
+	end
+	return got
+end
+
+-- plan B: construir el item con una HumanoidDescription
+local function viaDescription(char, aid, tid, rec)
+	if not tid then return false end
+	local desc = Instance.new("HumanoidDescription")
+	local am = ACC_MAP[tid]
+	local s = slotFor[tid]
+	if am then
+		local ok, et = pcall(function() return Enum.AccessoryType[am[1]] end)
+		if not ok then return false end
+		desc:SetAccessories({ { Order = 1, AssetId = aid, AccessoryType = et, IsLayered = am[2] or false } }, true)
+	elseif tid == 11 then desc.Shirt = aid
+	elseif tid == 12 then desc.Pants = aid
+	elseif tid == 2 then desc.GraphicTShirt = aid
+	elseif tid == 18 then desc.Face = aid
+	elseif s then desc[s[3]] = aid
+	else return false end
+	local ok, model = pcall(function() return Players:CreateHumanoidModelFromDescription(desc, Enum.HumanoidRigType.R15) end)
+	if not (ok and model) then return false end
+	local got = false
+	if s then
+		local animate = char:FindFirstChild("Animate")
+		local hum = char:FindFirstChildOfClass("Humanoid")
+		local mAnimate = model:FindFirstChild("Animate")
+		if animate and hum and mAnimate then
+			local src = mAnimate:FindFirstChild(s[1]) and mAnimate[s[1]]:FindFirstChild(s[2])
+			local dst = animate:FindFirstChild(s[1]) and animate[s[1]]:FindFirstChild(s[2])
+			if src and dst then
+				snapAnimate(animate)
+				setAnim(rec, dst, src.AnimationId)
+				restartAnimate(animate, hum)
+				got = true
+			end
+		end
+	else
+		got = harvest(char, model, rec, tid)
+	end
+	model:Destroy()
+	return got
+end
+
+local function tryAsset(char, aid, rec)
+	local info
+	pcall(function() info = MarketplaceService:GetProductInfo(aid, Enum.InfoType.Asset) end)
+	local tid = info and info.AssetTypeId
+	local asset = loadAsset(aid)
+	local got = false
+	if asset then
+		got = harvest(char, asset, rec, tid)
+		asset:Destroy()
+	end
+	if not got then got = viaDescription(char, aid, tid, rec) end
+	if got then rec.parts += 1 end
+	return got
+end
+
+local function bundleAssets(id)
+	local list, d = {}, nil
+	pcall(function() d = AES:GetItemDetails(id, Enum.AvatarItemType.Bundle) end)
+	if not d then pcall(function() d = AES:GetItemDetailsAsync(id, Enum.AvatarItemType.Bundle) end) end
+	if d then
+		local items = d.BundledItems or d.Items or d.bundledItems
+		if items then
+			for _, b in ipairs(items) do
+				if tostring(b.Type) == "Asset" then table.insert(list, b.Id) end
+			end
+		end
+	end
+	return list
+end
+
+local function tryOn(it)
+	local char = lp.Character
+	if not char or not char:FindFirstChildOfClass("Humanoid") then return nil end
+	local rec = newRec()
+	if isBundleItem(it) then
+		for _, aid in ipairs(bundleAssets(it.Id)) do tryAsset(char, aid, rec) end
+	else
+		tryAsset(char, it.Id, rec)
+	end
+	if rec.parts > 0 then return rec end
+	return nil
+end
+
+local function removeRec(rec)
+	for _, o in ipairs(rec.objs) do o:Destroy() end
+	for _, o in ipairs(rec.cloth) do
+		local slot = slots[o.ClassName]
+		if slot and slot.cur == o then
+			o:Destroy()
+			if slot.orig then pcall(function() slot.orig.Parent = lp.Character end) end
+			slots[o.ClassName] = nil
+		else
+			o:Destroy()
+		end
+	end
+	if rec.face and rec.face.decal.Parent then rec.face.decal.Texture = rec.face.old end
+	local any = false
+	for a, id in pairs(rec.anim) do
+		if a.Parent then a.AnimationId = id any = true end
+	end
+	if any then
+		local char = lp.Character
+		local animate = char and char:FindFirstChild("Animate")
+		local hum = char and char:FindFirstChildOfClass("Humanoid")
+		if animate and hum then restartAnimate(animate, hum) end
+	end
+end
+
+-- ===== interfaz =====
+local searchBox = textbox(pShop, "🔍 Buscar en el catálogo...")
+searchBox.Size = UDim2.new(1, -192, 0, 30)
+searchBox.Position = UDim2.new(0, 0, 0, 0)
+local goSearch = button(pShop, "Buscar", UDim2.new(0, 84, 0, 30), UDim2.new(1, -188, 0, 0))
+local clearAll = button(pShop, "🗑 Quitar todo", UDim2.new(0, 98, 0, 30), UDim2.new(1, -98, 0, 0), "panel")
+
+local chips = new("ScrollingFrame", {
+	Size = UDim2.new(1, 0, 0, 30), Position = UDim2.new(0, 0, 0, 36), BackgroundTransparency = 1, BorderSizePixel = 0,
+	ScrollBarThickness = 0, AutomaticCanvasSize = Enum.AutomaticSize.X, CanvasSize = UDim2.new(),
+	ScrollingDirection = Enum.ScrollingDirection.X,
+}, pShop)
+new("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder, VerticalAlignment = Enum.VerticalAlignment.Center }, chips)
+
+local statusLbl = new("TextLabel", {
+	Size = UDim2.new(1, 0, 0, 16), Position = UDim2.new(0, 0, 0, 68), BackgroundTransparency = 1, Font = Enum.Font.Gotham,
+	TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left, TextTransparency = .3, Text = "",
+}, pShop)
+txt(statusLbl)
+
+local grid = new("ScrollingFrame", {
+	Size = UDim2.new(1, 0, 1, -90), Position = UDim2.new(0, 0, 0, 90), BackgroundTransparency = 1, BorderSizePixel = 0,
+	ScrollBarThickness = 3, AutomaticCanvasSize = Enum.AutomaticSize.Y, CanvasSize = UDim2.new(),
+}, pShop)
+new("UIGridLayout", { CellSize = UDim2.new(0, 96, 0, 130), CellPadding = UDim2.new(0, 6, 0, 6), SortOrder = Enum.SortOrder.LayoutOrder }, grid)
+local moreBtn = button(grid, "＋ Cargar más", UDim2.new(), nil, "accent")
+moreBtn.LayoutOrder = 1000000
+moreBtn.Visible = false
+
+local function countWorn() local n = 0 for _, v in pairs(wornShop) do if type(v) == "table" then n += 1 end end return n end
+local function refreshStatus()
+	statusLbl.Text = ("Mostrando %d  •  Puestos: %d  •  Toca un item para probarlo / quitarlo"):format(shopCount, countWorn())
+end
+
+local function toggleItem(it, st)
+	local key = keyOf(it)
+	local pend = wornShop["_p" .. key]
+	if pend then return end
+	if wornShop[key] then
+		removeRec(wornShop[key])
+		wornShop[key] = nil wornItems[key] = nil
+		st.Transparency = 1
+		notify("Quitado: " .. it.Name)
+		refreshStatus()
+		return
+	end
+	wornShop["_p" .. key] = true
+	notify("Probando " .. it.Name .. "...")
+	task.spawn(function()
+		local rec = tryOn(it)
+		wornShop["_p" .. key] = nil
+		if rec then
+			wornShop[key] = rec wornItems[key] = it
+			st.Transparency = 0
+			notify("✔ Puesto: " .. it.Name)
+		else
+			notify("No se pudo probar este item")
+		end
+		refreshStatus()
+	end)
+end
+
+local function addCard(it)
+	shopCount += 1
+	local key = keyOf(it)
+	local c = new("Frame", { BackgroundTransparency = .2, BorderSizePixel = 0, LayoutOrder = shopCount }, grid)
+	round(c, 8) theme(c, "card")
+	local st = new("UIStroke", { Color = State.Accent, Thickness = 2, Transparency = wornShop[key] and 0 or 1 }, c)
+	cardStrokes[key] = st
+	local bundle = isBundleItem(it)
+	local img = new("ImageButton", {
+		Size = UDim2.new(1, -8, 0, 88), Position = UDim2.new(0, 4, 0, 4), BackgroundColor3 = Color3.fromRGB(45, 45, 58),
+		BorderSizePixel = 0, AutoButtonColor = false, ScaleType = Enum.ScaleType.Fit,
+		Image = ("rbxthumb://type=%s&id=%d&w=150&h=150"):format(bundle and "BundleThumbnail" or "Asset", it.Id),
+	}, c)
+	round(img, 6)
+	local price = new("TextLabel", {
+		Text = it.Price and ("R$" .. it.Price) or "—", Size = UDim2.new(0, 0, 0, 14), AutomaticSize = Enum.AutomaticSize.X,
+		Position = UDim2.new(0, 3, 1, -17), BackgroundColor3 = Color3.fromRGB(0, 0, 0), BackgroundTransparency = .35,
+		TextColor3 = WHITE, Font = Enum.Font.GothamBold, TextSize = 10, BorderSizePixel = 0,
+	}, img)
+	round(price, 4)
+	new("UIPadding", { PaddingLeft = UDim.new(0, 4), PaddingRight = UDim.new(0, 4) }, price)
+	if bundle then
+		local tag = new("TextLabel", {
+			Text = "📦", Size = UDim2.new(0, 18, 0, 16), Position = UDim2.new(1, -20, 0, 2), BackgroundTransparency = 1, TextSize = 12,
+		}, img)
+	end
+	local nm = new("TextLabel", {
+		Text = it.Name or "?", Size = UDim2.new(1, -8, 0, 32), Position = UDim2.new(0, 4, 0, 94), BackgroundTransparency = 1,
+		Font = Enum.Font.GothamMedium, TextSize = 10, TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left,
+		TextYAlignment = Enum.TextYAlignment.Top, TextTruncate = Enum.TextTruncate.AtEnd,
+	}, c)
+	txt(nm)
+	img.MouseButton1Click:Connect(function() toggleItem(it, st) end)
+end
+
+local function callSearch(params)
+	local ok, res = pcall(function() return AES:SearchCatalogAsync(params) end)
+	if ok and res then return res end
+	local ok2, res2 = pcall(function() return AES:SearchCatalog(params) end)
+	if ok2 and res2 then return res2 end
+	error(tostring(res2 or res))
+end
+
+local function buildParams()
+	local params = CatalogSearchParams.new()
+	params.SearchKeyword = keyword
+	local cat = CATS[catIndex][2]
+	if cat.assets then
+		local l = enumList("AvatarAssetType", cat.assets)
+		if #l > 0 then params.AssetTypes = l end
+	end
+	if cat.bundles then
+		local l = enumList("BundleType", cat.bundles)
+		if #l > 0 then params.BundleTypes = l end
+	end
+	if cat.filter then pcall(function() params.CategoryFilter = Enum.CatalogCategoryFilter[cat.filter] end) end
+	pcall(function() params.SortType = Enum.CatalogSortType[SORTS[sortIndex][2]] end)
+	pcall(function() params.IncludeOffSale = true end)
+	pcall(function() params.Limit = 120 end)
+	return params
+end
+
+local function search(reset)
+	if shopLoading then return end
+	shopLoading = true
+	loadedOnce = true
+	if reset then
+		for _, c in ipairs(grid:GetChildren()) do
+			if c:IsA("GuiObject") and c ~= moreBtn then c:Destroy() end
+		end
+		shopPages, shopCount, cardStrokes = nil, 0, {}
+	end
+	moreBtn.Visible = false
+	statusLbl.Text = "Cargando catálogo..."
+	task.spawn(function()
+		local ok, err = pcall(function()
+			if not shopPages then
+				shopPages = callSearch(buildParams())
+			else
+				shopPages:AdvanceToNextPageAsync()
+			end
+			for _, it in ipairs(shopPages:GetCurrentPage()) do addCard(it) end
+		end)
+		shopLoading = false
+		if ok then
+			moreBtn.Visible = not shopPages.IsFinished
+			refreshStatus()
+		else
+			statusLbl.Text = "No se pudo cargar el catálogo (el juego puede bloquearlo)"
+			warn("[Shop] " .. tostring(err))
+		end
+	end)
+end
+
+-- chips: orden + categorías
+local chipBtns = {}
+local function styleChips()
+	for i, b in ipairs(chipBtns) do themed[b] = (i == catIndex) and "accent" or "panel" end
+	applyAll()
+end
+local function makeChip(text, order)
+	local b = button(chips, text, UDim2.new(0, 0, 0, 26), nil, "panel")
+	b.AutomaticSize = Enum.AutomaticSize.X
+	b.Size = UDim2.new(0, 0, 0, 26)
+	b.LayoutOrder = order
+	new("UIPadding", { PaddingLeft = UDim.new(0, 12), PaddingRight = UDim.new(0, 12) }, b)
+	return b
+end
+local sortChip = makeChip("↕ " .. SORTS[sortIndex][1], 0)
+sortChip.MouseButton1Click:Connect(function()
+	sortIndex = sortIndex % #SORTS + 1
+	sortChip.Text = "↕ " .. SORTS[sortIndex][1]
+	search(true)
+end)
+for i, c in ipairs(CATS) do
+	local b = makeChip(c[1], i)
+	chipBtns[i] = b
+	b.MouseButton1Click:Connect(function() catIndex = i styleChips() search(true) end)
+end
+styleChips()
+
+goSearch.MouseButton1Click:Connect(function() keyword = searchBox.Text search(true) end)
+searchBox.FocusLost:Connect(function(enter) if enter then keyword = searchBox.Text search(true) end end)
+moreBtn.MouseButton1Click:Connect(function() search(false) end)
+clearAll.MouseButton1Click:Connect(function()
+	for k, rec in pairs(wornShop) do
+		if type(rec) == "table" then removeRec(rec) end
+	end
+	wornShop, wornItems = {}, {}
+	for _, st in pairs(cardStrokes) do if st.Parent then st.Transparency = 1 end end
+	refreshStatus()
+	notify("Todo quitado")
+end)
+
+pShop:GetPropertyChangedSignal("Visible"):Connect(function()
+	if pShop.Visible and not loadedOnce then search(true) end
+end)
+
+-- al reaparecer: volver a poner lo que tenías probado
+lp.CharacterAdded:Connect(function()
+	local items = {}
+	for _, it in pairs(wornItems) do table.insert(items, it) end
+	wornShop, slots = {}, {}
+	for _, st in pairs(cardStrokes) do if st.Parent then st.Transparency = 1 end end
+	if #items > 0 then
+		task.wait(1.5)
+		for _, it in ipairs(items) do
+			local rec = tryOn(it)
+			local key = keyOf(it)
+			if rec then
+				wornShop[key] = rec
+				local st = cardStrokes[key]
+				if st and st.Parent then st.Transparency = 0 end
+			else
+				wornItems[key] = nil
+			end
+		end
+		refreshStatus()
+	end
+end)
+end
+
+-- RESPAWN -----------------------------------------------------------------------------------
+lp.CharacterAdded:Connect(function(char)
+	stopFly()
+	setFly(false, true)
+	if wearing then
+		char:WaitForChild("Humanoid")
+		task.wait(.8)
+		copyAvatar(wearing)
+	end
+end)
+
+-- BUCLE: arcoíris + mantener velocidad/salto -------------------------------------------------
+RunService.Heartbeat:Connect(function()
+	if State.Rainbow then stroke.Color = Color3.fromHSV((tick() % 4) / 4, 1, 1) end
+	local hum = lp.Character and lp.Character:FindFirstChildOfClass("Humanoid")
+	if hum then
+		if speedOn and hum.WalkSpeed ~= customSpeed then hum.WalkSpeed = customSpeed end
+		if jumpOn then
+			if not hum.UseJumpPower then hum.UseJumpPower = true end
+			if hum.JumpPower ~= customJump then hum.JumpPower = customJump end
+		end
+	end
+end)
+
+-- INICIO ---------------------------------------------------------------------------------------
+addTab("Ajustes", "⚙  Ajustes", 1)
+addTab("Teleport", "📍  Teleport", 2)
+addTab("Volar", "🕊  Volar", 3)
+addTab("Jugador", "🏃  Jugador", 4)
+addTab("Shop", "🛍  Shop", 5)
+addTab("Visual", "👁  Visual", 6)
+addTab("Utilidades", "🛠  Utilidades", 7)
+addTab("Espectar", "🎥  Espectar", 8)
+addTab("Avatar", "👤  Avatar", 9)
+if CONFIG.BACKGROUND_IMAGE ~= "" then setBackground(CONFIG.BACKGROUND_IMAGE) end
+selectTab("Ajustes")
+applyAll()
