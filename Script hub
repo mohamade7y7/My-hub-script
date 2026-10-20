@@ -1522,9 +1522,62 @@ local moreBtn = button(grid, "＋ Cargar más", UDim2.new(), nil, "accent")
 moreBtn.LayoutOrder = 1000000
 moreBtn.Visible = false
 
+local viewWorn = false
+local renderWorn
+local wornChipRef
 local function countWorn() local n = 0 for _, v in pairs(wornShop) do if type(v) == "table" then n += 1 end end return n end
 local function refreshStatus()
+	if viewWorn then renderWorn() return end
 	statusLbl.Text = ("Mostrando %d  •  Puestos: %d  •  Toca un item para probarlo / quitarlo"):format(shopCount, countWorn())
+end
+
+-- vista "Puesto": lo que llevas probado, con foto y botón para quitar
+renderWorn = function()
+	for _, c in ipairs(grid:GetChildren()) do
+		if c:IsA("GuiObject") and c ~= moreBtn then c:Destroy() end
+	end
+	moreBtn.Visible = false
+	local n = 0
+	for key, it in pairs(wornItems) do
+		if wornShop[key] then
+			n += 1
+			local c = new("Frame", { BackgroundTransparency = .2, BorderSizePixel = 0, LayoutOrder = n }, grid)
+			round(c, 8) theme(c, "card")
+			new("UIStroke", { Color = State.Accent, Thickness = 2 }, c)
+			local bundle = isBundleItem(it)
+			local img = new("ImageLabel", {
+				Size = UDim2.new(1, -8, 0, 88), Position = UDim2.new(0, 4, 0, 4), BackgroundColor3 = Color3.fromRGB(45, 45, 58),
+				BorderSizePixel = 0, ScaleType = Enum.ScaleType.Fit,
+				Image = ("rbxthumb://type=%s&id=%d&w=150&h=150"):format(bundle and "BundleThumbnail" or "Asset", it.Id),
+			}, c)
+			round(img, 6)
+			local nm = new("TextLabel", {
+				Text = it.Name or "?", Size = UDim2.new(1, -8, 0, 32), Position = UDim2.new(0, 4, 0, 94), BackgroundTransparency = 1,
+				Font = Enum.Font.GothamMedium, TextSize = 10, TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left,
+				TextYAlignment = Enum.TextYAlignment.Top, TextTruncate = Enum.TextTruncate.AtEnd,
+			}, c)
+			txt(nm)
+			local rm = button(c, "✕ Quitar", UDim2.new(1, -16, 0, 22), UDim2.new(0, 8, 0, 66))
+			rm.TextSize = 11
+			rm.ZIndex = 3
+			themed[rm] = nil
+			rm.BackgroundColor3 = Color3.fromRGB(225, 55, 65)
+			rm.MouseButton1Click:Connect(function()
+				local rec = wornShop[key]
+				if rec then removeRec(rec) end
+				wornShop[key], wornItems[key] = nil, nil
+				local st = cardStrokes[key]
+				if st and st.Parent then st.Transparency = 1 end
+				notify("Quitado: " .. (it.Name or "?"))
+				refreshStatus()
+			end)
+		end
+	end
+	if n > 0 then
+		statusLbl.Text = ("Puestos: %d  •  Toca ✕ Quitar para sacar un item"):format(n)
+	else
+		statusLbl.Text = "No llevas ningún item probado. Pulsa 🧍 Puesto otra vez para volver al catálogo."
+	end
 end
 
 local function toggleItem(it, st)
@@ -1619,6 +1672,10 @@ end
 
 local function search(reset)
 	if shopLoading then return end
+	if viewWorn then
+		viewWorn = false
+		if wornChipRef then themed[wornChipRef] = "panel" applyAll() end
+	end
 	shopLoading = true
 	loadedOnce = true
 	if reset then
@@ -1668,6 +1725,14 @@ sortChip.MouseButton1Click:Connect(function()
 	sortIndex = sortIndex % #SORTS + 1
 	sortChip.Text = "↕ " .. SORTS[sortIndex][1]
 	search(true)
+end)
+local wornChip = makeChip("🧍 Puesto", -1)
+wornChipRef = wornChip
+wornChip.MouseButton1Click:Connect(function()
+	viewWorn = not viewWorn
+	themed[wornChip] = viewWorn and "accent" or "panel"
+	applyAll()
+	if viewWorn then renderWorn() else search(true) end
 end)
 for i, c in ipairs(CATS) do
 	local b = makeChip(c[1], i)
