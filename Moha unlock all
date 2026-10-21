@@ -1,0 +1,412 @@
+--[[
+    UNLOCK ALL by MOHA
+    Rivals - Desbloquea TODAS las armas y warps
+    Compatible con Delta, Solara, Synapse X, Fluxus, Xeno
+]]
+
+-- Configuración
+local player = game.Players.LocalPlayer
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "UnlockAllGUI"
+screenGui.ResetOnSpawn = false
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+
+-- Obtener GUI padre (compatible con Delta)
+local guiParent = (gethui and gethui()) or game.CoreGui or player.PlayerGui
+screenGui.Parent = guiParent
+
+-- Lista de armas comunes en Rivals
+local armasComunes = {
+    "AK47", "M4A1", "SCAR", "MP5", "UZI", "Deagle", "Revolver",
+    "Sniper", "AWP", "Shotgun", "SPAS12", "RPG", "Grenade",
+    "Knife", "Sword", "Bat", "Katana", "DualPistols", "SMG"
+}
+
+-- Lista de warps comunes
+local warpsComunes = {
+    "Lobby", "Arena1", "Arena2", "Arena3", "Arena4",
+    "Rooftop", "Warehouse", "Desert", "Snow", "Base"
+}
+
+-- Función para escanear armas dinámicamente
+local function escanearArmas()
+    local armas = {}
+    local fuentes = {
+        game.ReplicatedStorage:FindFirstChild("Weapons"),
+        game.ReplicatedStorage:FindFirstChild("Guns"),
+        game.ReplicatedStorage:FindFirstChild("Tools"),
+        game.ReplicatedStorage:FindFirstChild("Items"),
+        game.ServerStorage:FindFirstChild("Weapons"),
+        game.ServerStorage:FindFirstChild("Guns")
+    }
+    
+    for _, fuente in ipairs(fuentes) do
+        if fuente then
+            for _, item in ipairs(fuente:GetChildren()) do
+                if item:IsA("Tool") or item:IsA("Model") then
+                    table.insert(armas, item)
+                end
+            end
+        end
+    end
+    
+    -- Agregar armas comunes que no se encontraron
+    for _, arma in ipairs(armasComunes) do
+        if not table.find(armas, arma) then
+            table.insert(armas, arma)
+        end
+    end
+    
+    return armas
+end
+
+-- Función para escanear warps dinámicamente
+local function escanearWarps()
+    local warps = {}
+    
+    -- Buscar en workspace
+    for _, obj in ipairs(workspace:GetChildren()) do
+        if obj.Name:lower():find("warp") or obj.Name:lower():find("teleport") or obj.Name:lower():find("spawn") then
+            table.insert(warps, obj)
+        end
+    end
+    
+    -- Buscar en ReplicatedStorage
+    local warpFolder = game.ReplicatedStorage:FindFirstChild("Warps") or game.ReplicatedStorage:FindFirstChild("Teleports")
+    if warpFolder then
+        for _, warp in ipairs(warpFolder:GetChildren()) do
+            table.insert(warps, warp)
+        end
+    end
+    
+    -- Agregar warps comunes
+    for _, warp in ipairs(warpsComunes) do
+        if not table.find(warps, warp) then
+            table.insert(warps, warp)
+        end
+    end
+    
+    return warps
+end
+
+-- Función para desbloquear armas
+local function desbloquearArma(arma)
+    pcall(function()
+        local tool = nil
+        
+        -- Intentar obtener el tool
+        if typeof(arma) == "string" then
+            -- Buscar por nombre
+            for _, folder in ipairs({"Weapons", "Guns", "Tools", "Items"}) do
+                local fuente = game.ReplicatedStorage:FindFirstChild(folder)
+                if fuente then
+                    tool = fuente:FindFirstChild(arma)
+                    if tool then break end
+                end
+            end
+        elseif typeof(arma) == "Instance" then
+            tool = arma
+        end
+        
+        if tool and tool:IsA("Tool") then
+            -- Clonar el tool al backpack
+            local clone = tool:Clone()
+            clone.Parent = player.Backpack
+            
+            -- Intentar equipar si es necesario
+            if player.Character and player.Character:FindFirstChild("Humanoid") then
+                player.Character.Humanoid:EquipTool(clone)
+            end
+        else
+            -- Intentar desbloquear via remotes
+            local remotes = {
+                game.ReplicatedStorage:FindFirstChild("UnlockWeapon"),
+                game.ReplicatedStorage:FindFirstChild("GiveTool"),
+                game.ReplicatedStorage:FindFirstChild("EquipItem")
+            }
+            
+            for _, remote in ipairs(remotes) do
+                if remote then
+                    remote:FireServer(arma)
+                end
+            end
+        end
+    end)
+end
+
+-- Función para desbloquear warp
+local function desbloquearWarp(warp)
+    pcall(function()
+        local pos = nil
+        
+        if typeof(warp) == "string" then
+            -- Buscar por nombre
+            for _, obj in ipairs(workspace:GetChildren()) do
+                if obj.Name:lower():find(warp:lower()) then
+                    if obj:IsA("BasePart") then
+                        pos = obj.Position
+                        break
+                    elseif obj:FindFirstChild("Position") then
+                        pos = obj.Position.Position
+                        break
+                    end
+                end
+            end
+        elseif typeof(warp) == "Instance" then
+            if warp:IsA("BasePart") then
+                pos = warp.Position
+            elseif warp:FindFirstChild("Position") then
+                pos = warp.Position.Position
+            end
+        end
+        
+        -- Teleportar al warp
+        if pos and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+            local hrp = player.Character.HumanoidRootPart
+            local tweenInfo = TweenInfo.new(0.5, Enum.EasingStyle.Linear, Enum.EasingDirection.Out)
+            local tween = game:GetService("TweenService"):Create(hrp, tweenInfo, {CFrame = CFrame.new(pos)})
+            tween:Play()
+        end
+    end)
+end
+
+-- Función principal UNLOCK ALL
+local function unlockAll()
+    local armas = escanearArmas()
+    local warps = escanearWarps()
+    
+    -- Desbloquear todas las armas
+    for _, arma in ipairs(armas) do
+        desbloquearArma(arma)
+        task.wait(0.05)
+    end
+    
+    -- Desbloquear todos los warps
+    for _, warp in ipairs(warps) do
+        desbloquearWarp(warp)
+        task.wait(0.05)
+    end
+    
+    print("✅ TODAS las armas y warps desbloqueados")
+end
+
+-- Crear GUI
+local mainFrame = Instance.new("Frame")
+mainFrame.Name = "MainFrame"
+mainFrame.Size = UDim2.new(0, 350, 0, 500)
+mainFrame.Position = UDim2.new(0.5, -175, 0.5, -250)
+mainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+mainFrame.BackgroundTransparency = 0.1
+mainFrame.BorderSizePixel = 0
+mainFrame.Active = true
+mainFrame.Parent = screenGui
+
+-- Esquinas redondeadas
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 15)
+corner.Parent = mainFrame
+
+-- Título
+local title = Instance.new("TextLabel")
+title.Name = "Title"
+title.Size = UDim2.new(1, 0, 0, 50)
+title.Position = UDim2.new(0, 0, 0, 10)
+title.BackgroundColor3 = Color3.fromRGB(0, 255, 128)
+title.BackgroundTransparency = 0.8
+title.Text = "UNLOCK ALL by MOHA"
+title.TextColor3 = Color3.fromRGB(0, 255, 128)
+title.TextSize = 24
+title.Font = Enum.Font.GothamBold
+title.Parent = mainFrame
+
+-- Botón UNLOCK ALL
+local unlockButton = Instance.new("TextButton")
+unlockButton.Name = "UnlockAllButton"
+unlockButton.Size = UDim2.new(0.9, 0, 0, 60)
+unlockButton.Position = UDim2.new(0.05, 0, 0, 70)
+unlockButton.BackgroundColor3 = Color3.fromRGB(0, 255, 128)
+unlockButton.BackgroundTransparency = 0.2
+unlockButton.Text = "🔥 UNLOCK ALL 🔥"
+unlockButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+unlockButton.TextSize = 20
+unlockButton.Font = Enum.Font.GothamBold
+unlockButton.Parent = mainFrame
+
+local unlockCorner = Instance.new("UICorner")
+unlockCorner.CornerRadius = UDim.new(0, 10)
+unlockCorner.Parent = unlockButton
+
+-- Sección de armas
+local armasLabel = Instance.new("TextLabel")
+armasLabel.Name = "ArmasLabel"
+armasLabel.Size = UDim2.new(0.9, 0, 0, 30)
+armasLabel.Position = UDim2.new(0.05, 0, 0, 140)
+armasLabel.BackgroundColor3 = Color3.fromRGB(255, 0, 255)
+armasLabel.BackgroundTransparency = 0.7
+armasLabel.Text = "🎯 ARMAS"
+armasLabel.TextColor3 = Color3.fromRGB(255, 0, 255)
+armasLabel.TextSize = 16
+armasLabel.Font = Enum.Font.GothamBold
+armasLabel.Parent = mainFrame
+
+-- Scroll de armas
+local armasScroll = Instance.new("ScrollingFrame")
+armasScroll.Name = "ArmasScroll"
+armasScroll.Size = UDim2.new(0.9, 0, 0, 120)
+armasScroll.Position = UDim2.new(0.05, 0, 0, 175)
+armasScroll.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+armasScroll.BackgroundTransparency = 0.5
+armasScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+armasScroll.ScrollBarThickness = 5
+armasScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+armasScroll.Parent = mainFrame
+
+-- Sección de warps
+local warpsLabel = Instance.new("TextLabel")
+warpsLabel.Name = "WarpsLabel"
+warpsLabel.Size = UDim2.new(0.9, 0, 0, 30)
+warpsLabel.Position = UDim2.new(0.05, 0, 0, 310)
+warpsLabel.BackgroundColor3 = Color3.fromRGB(0, 255, 255)
+warpsLabel.BackgroundTransparency = 0.7
+warpsLabel.Text = "🌍 WARPS"
+warpsLabel.TextColor3 = Color3.fromRGB(0, 255, 255)
+warpsLabel.TextSize = 16
+warpsLabel.Font = Enum.Font.GothamBold
+warpsLabel.Parent = mainFrame
+
+-- Scroll de warps
+local warpsScroll = Instance.new("ScrollingFrame")
+warpsScroll.Name = "WarpsScroll"
+warpsScroll.Size = UDim2.new(0.9, 0, 0, 120)
+warpsScroll.Position = UDim2.new(0.05, 0, 0, 345)
+warpsScroll.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+warpsScroll.BackgroundTransparency = 0.5
+warpsScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+warpsScroll.ScrollBarThickness = 5
+warpsScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+warpsScroll.Parent = mainFrame
+
+-- Crédito
+local credit = Instance.new("TextLabel")
+credit.Name = "Credit"
+credit.Size = UDim2.new(1, 0, 0, 20)
+credit.Position = UDim2.new(0, 0, 1, -25)
+credit.BackgroundTransparency = 1
+credit.Text = "its unlock all by MOHA"
+credit.TextColor3 = Color3.fromRGB(128, 128, 128)
+credit.TextSize = 12
+credit.Font = Enum.Font.Gotham
+credit.Parent = mainFrame
+
+-- Botón flotante para mostrar/ocultar
+local toggleButton = Instance.new("TextButton")
+toggleButton.Name = "ToggleButton"
+toggleButton.Size = UDim2.new(0, 50, 0, 50)
+toggleButton.Position = UDim2.new(0, 10, 0, 10)
+toggleButton.BackgroundColor3 = Color3.fromRGB(0, 255, 128)
+toggleButton.BackgroundTransparency = 0.3
+toggleButton.Text = "⚡"
+toggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+toggleButton.TextSize = 24
+toggleButton.Font = Enum.Font.GothamBold
+toggleButton.Parent = screenGui
+
+local toggleCorner = Instance.new("UICorner")
+toggleCorner.CornerRadius = UDim.new(1, 0)
+toggleCorner.Parent = toggleButton
+
+-- Función para crear botón de arma
+local function crearBotonArma(arma)
+    local nombre = typeof(arma) == "string" and arma or arma.Name
+    local boton = Instance.new("TextButton")
+    boton.Size = UDim2.new(0.95, 0, 0, 35)
+    boton.Position = UDim2.new(0.025, 0, 0, 0)
+    boton.BackgroundColor3 = Color3.fromRGB(0, 255, 128)
+    boton.BackgroundTransparency = 0.6
+    boton.Text = nombre
+    boton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    boton.TextSize = 14
+    boton.Font = Enum.Font.Gotham
+    boton.Parent = armasScroll
+    
+    local botonCorner = Instance.new("UICorner")
+    botonCorner.CornerRadius = UDim.new(0, 5)
+    botonCorner.Parent = boton
+    
+    boton.MouseButton1Click:Connect(function()
+        desbloquearArma(arma)
+    end)
+end
+
+-- Función para crear botón de warp
+local function crearBotonWarp(warp)
+    local nombre = typeof(warp) == "string" and warp or warp.Name
+    local boton = Instance.new("TextButton")
+    boton.Size = UDim2.new(0.95, 0, 0, 35)
+    boton.Position = UDim2.new(0.025, 0, 0, 0)
+    boton.BackgroundColor3 = Color3.fromRGB(0, 255, 255)
+    boton.BackgroundTransparency = 0.6
+    boton.Text = nombre
+    boton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    boton.TextSize = 14
+    boton.Font = Enum.Font.Gotham
+    boton.Parent = warpsScroll
+    
+    local botonCorner = Instance.new("UICorner")
+    botonCorner.CornerRadius = UDim.new(0, 5)
+    botonCorner.Parent = boton
+    
+    boton.MouseButton1Click:Connect(function()
+        desbloquearWarp(warp)
+    end)
+end
+
+-- Crear botones para armas
+local armas = escanearArmas()
+for _, arma in ipairs(armas) do
+    crearBotonArma(arma)
+end
+
+-- Crear botones para warps
+local warps = escanearWarps()
+for _, warp in ipairs(warps) do
+    crearBotonWarp(warp)
+end
+
+-- Conectar botón UNLOCK ALL
+unlockButton.MouseButton1Click:Connect(function()
+    unlockAll()
+end)
+
+-- Toggle GUI
+local guiVisible = true
+toggleButton.MouseButton1Click:Connect(function()
+    guiVisible = not guiVisible
+    mainFrame.Visible = guiVisible
+end)
+
+-- Hacer arrastrable el frame
+local dragging = false
+local dragOffset = Vector2.new()
+
+mainFrame.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragOffset = input.Position - mainFrame.AbsolutePosition
+    end
+end)
+
+mainFrame.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = false
+    end
+end)
+
+game:GetService("UserInputService").InputChanged:Connect(function(input)
+    if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        mainFrame.Position = UDim2.new(0, input.Position.X - dragOffset.X, 0, input.Position.Y - dragOffset.Y)
+    end
+end)
+
+-- Notificación
+print("✅ UNLOCK ALL by MOHA cargado correctamente")
