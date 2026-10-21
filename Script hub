@@ -10,7 +10,7 @@ local CONFIG = {
 	-- (Roblox NO carga links externos como imgur. Sube la imagen a create.roblox.com y usa su ID)
 	BACKGROUND_IMAGE = "",
 	TOGGLE_KEY = Enum.KeyCode.RightShift,
-	PASSWORD = "MOHA", -- cambia esto
+	PASSWORD = "1234", -- cambia esto
 	LOGO = "82409250227350", -- ID de tu logo (imagen subida a Roblox)
 }
 local LOGO_IMG = CONFIG.LOGO ~= "" and ("rbxassetid://" .. (CONFIG.LOGO:gsub("%D", ""))) or ""
@@ -233,7 +233,7 @@ stroke = new("UIStroke", { Thickness = 2, Color = State.Accent }, main)
 -- capas de fondo
 local bgGrad = new("Frame", { Size = UDim2.new(1, 0, 1, 0), BorderSizePixel = 0, ZIndex = 0 }, main)
 theme(bgGrad, "bg")
-new("UIGradient", { Color = ColorSequence.new(WHITE, Color3.fromRGB(120, 120, 150)), Rotation = 45 }, bgGrad)
+local bgGradUI = new("UIGradient", { Color = ColorSequence.new(WHITE, Color3.fromRGB(120, 120, 150)), Rotation = 45 }, bgGrad)
 local bgImg = new("ImageLabel", {
 	Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, ScaleType = Enum.ScaleType.Crop,
 	ImageTransparency = 0.45, ZIndex = 1, Visible = false,
@@ -480,8 +480,13 @@ local function selectTab(name)
 	end
 	applyAll()
 end
+local tabHolder = new("ScrollingFrame", {
+	Size = UDim2.new(1, 0, 1, -58), BackgroundTransparency = 1, BorderSizePixel = 0, ScrollBarThickness = 2,
+	CanvasSize = UDim2.new(), ZIndex = 3,
+}, side)
 local function addTab(name, text, index)
-	local b = button(side, text, UDim2.new(1, -14, 0, 28), UDim2.new(0, 7, 0, 6 + (index - 1) * 31), "panel")
+	tabHolder.CanvasSize = UDim2.new(0, 0, 0, 12 + index * 31)
+	local b = button(tabHolder, text, UDim2.new(1, -14, 0, 28), UDim2.new(0, 7, 0, 6 + (index - 1) * 31), "panel")
 	b.ZIndex = 4
 	local ind = new("Frame", { Name = "Ind", Size = UDim2.new(0, 3, 0.6, 0), Position = UDim2.new(0, 3, 0.2, 0), BackgroundColor3 = WHITE, BorderSizePixel = 0, Visible = false, ZIndex = 5 }, b)
 	round(ind, 2)
@@ -568,6 +573,53 @@ local cFx = card(pSet, "✨ Efectos")
 toggle(cFx, "Animaciones del menú", true, function(v) State.Anim = v end)
 toggle(cFx, "Borde arcoíris", false, function(v) State.Rainbow = v applyAll() end)
 toggle(cFx, "Brillos decorativos", true, function(v) orbs.Visible = v end)
+
+do
+local fxBg, fxAccent, fxGlow = true, true, true
+local baseAccent = State.Accent
+local fxT, fxAcc, hue = 0, 0, 0
+local orbBase = {}
+local openGlow = new("UIStroke", {
+	Thickness = 2, Color = State.Accent, Transparency = .4, ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+}, openBtn)
+toggle(cFx, "Fondo animado", true, function(v) fxBg = v end)
+toggle(cFx, "Colores animados", true, function(v)
+	fxAccent = v
+	if not v then State.Accent = baseAccent applyAll() end
+end)
+toggle(cFx, "Brillo del botón de abrir", true, function(v) fxGlow = v openGlow.Enabled = v end)
+label(cFx, "Con «Colores animados» activo el color de acento cambia solo. Apágalo para elegir un color fijo.", 11, 44, true)
+
+RunService.Heartbeat:Connect(function(dt)
+	fxT += dt
+	if fxBg and isOpen then
+		bgGradUI.Rotation = (fxT * 20) % 360
+		for i, o in ipairs(orbs:GetChildren()) do
+			if o:IsA("Frame") then
+				orbBase[o] = orbBase[o] or o.Position
+				local b = orbBase[o]
+				o.Position = UDim2.new(
+					b.X.Scale, b.X.Offset + math.sin(fxT * .6 + i) * 24,
+					b.Y.Scale, b.Y.Offset + math.cos(fxT * .5 + i * 2) * 18
+				)
+			end
+		end
+	end
+	if fxAccent then
+		hue = (hue + dt * 0.08) % 1
+		fxAcc += dt
+		if fxAcc > .05 then
+			fxAcc = 0
+			State.Accent = Color3.fromHSV(hue, .75, 1)
+			applyAll()
+		end
+	end
+	if fxGlow then
+		openGlow.Transparency = .35 + math.sin(fxT * 3) * .3
+		openGlow.Color = State.Accent
+	end
+end)
+end
 
 -- PÁGINA: TELEPORT ---------------------------------------------------------------
 local pTp = framePage("Teleport")
@@ -991,6 +1043,7 @@ local function copyAvatar(userId)
 	return base, rep
 end
 
+do
 local cAv = card(pAv, "👤 Ejecutar avatar")
 label(cAv, "Escribe el ID (o el nombre de usuario) de cualquier jugador. Solo TÚ ves el cambio; los demás te ven normal.", 11, 44, true)
 local idBox = textbox(cAv, "ID del jugador (ej: 1)")
@@ -1044,6 +1097,7 @@ backBtn.MouseButton1Click:Connect(function()
 		end
 	end)
 end)
+end
 
 do
 -- ============================ NUEVAS FUNCIONES (v3) ============================
@@ -1255,6 +1309,7 @@ local pShop = framePage("Shop")
 local wornShop, wornItems, slots, cardStrokes = {}, {}, {}, {}
 local shopPages, shopLoading, shopCount = nil, false, 0
 local catIndex, sortIndex, keyword = 1, 1, ""
+local PF = {} -- filtro de precio (PF.minPrice / PF.maxPrice)
 local loadedOnce = false
 
 local function enumList(kind, names)
@@ -1280,7 +1335,7 @@ local CATS = {
 }
 local SORTS = {
 	{ "Relevancia", "Relevance" }, { "Más vendidos", "Bestselling" }, { "Recientes", "RecentlyCreated" },
-	{ "Favoritos", "MostFavorited" }, { "Precio ↑", "PriceLowToHigh" },
+	{ "Favoritos", "MostFavorited" }, { "Precio ↑", "PriceLowToHigh" }, { "Precio ↓", "PriceHighToLow" },
 }
 -- tipo de asset (AssetTypeId) -> accesorio / animación
 local ACC_MAP = {
@@ -1335,7 +1390,7 @@ local function applyPackRec(animate, pack, rec)
 	return n
 end
 
-local function harvest(char, container, rec, tid)
+local function harvest(char, container, rec, tid, noAnim)
 	local got = false
 	local hum = char:FindFirstChildOfClass("Humanoid")
 	local animate = char:FindFirstChild("Animate")
@@ -1346,7 +1401,7 @@ local function harvest(char, container, rec, tid)
 			if attachAccessory(char, o) then table.insert(rec.objs, o) got = true end
 		elseif o:IsA("Shirt") or o:IsA("Pants") or o:IsA("ShirtGraphic") then
 			wearCloth(char, o, rec) got = true
-		elseif o:IsA("Animation") then
+		elseif o:IsA("Animation") and not noAnim then
 			hasAnim = true
 		end
 	end
@@ -1419,7 +1474,7 @@ local function viaDescription(char, aid, tid, rec)
 			end
 		end
 	else
-		got = harvest(char, model, rec, tid)
+		got = harvest(char, model, rec, tid, true)
 	end
 	model:Destroy()
 	return got
@@ -1499,22 +1554,30 @@ searchBox.Size = UDim2.new(1, -192, 0, 30)
 searchBox.Position = UDim2.new(0, 0, 0, 0)
 local goSearch = button(pShop, "Buscar", UDim2.new(0, 84, 0, 30), UDim2.new(1, -188, 0, 0))
 local clearAll = button(pShop, "🗑 Quitar todo", UDim2.new(0, 98, 0, 30), UDim2.new(1, -98, 0, 0), "panel")
+PF.minBox = textbox(pShop, "💲 Mín")
+PF.minBox.Size = UDim2.new(0, 70, 0, 26)
+PF.minBox.Position = UDim2.new(0, 0, 0, 34)
+PF.maxBox = textbox(pShop, "💲 Máx")
+PF.maxBox.Size = UDim2.new(0, 70, 0, 26)
+PF.maxBox.Position = UDim2.new(0, 76, 0, 34)
+PF.free = button(pShop, "🆓 Gratis", UDim2.new(0, 84, 0, 26), UDim2.new(0, 152, 0, 34), "panel")
+PF.apply = button(pShop, "Aplicar precio", UDim2.new(1, -244, 0, 26), UDim2.new(0, 244, 0, 34))
 
 local chips = new("ScrollingFrame", {
-	Size = UDim2.new(1, 0, 0, 30), Position = UDim2.new(0, 0, 0, 36), BackgroundTransparency = 1, BorderSizePixel = 0,
+	Size = UDim2.new(1, 0, 0, 30), Position = UDim2.new(0, 0, 0, 64), BackgroundTransparency = 1, BorderSizePixel = 0,
 	ScrollBarThickness = 0, AutomaticCanvasSize = Enum.AutomaticSize.X, CanvasSize = UDim2.new(),
 	ScrollingDirection = Enum.ScrollingDirection.X,
 }, pShop)
 new("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder, VerticalAlignment = Enum.VerticalAlignment.Center }, chips)
 
 local statusLbl = new("TextLabel", {
-	Size = UDim2.new(1, 0, 0, 16), Position = UDim2.new(0, 0, 0, 68), BackgroundTransparency = 1, Font = Enum.Font.Gotham,
+	Size = UDim2.new(1, 0, 0, 16), Position = UDim2.new(0, 0, 0, 94), BackgroundTransparency = 1, Font = Enum.Font.Gotham,
 	TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left, TextTransparency = .3, Text = "",
 }, pShop)
 txt(statusLbl)
 
 local grid = new("ScrollingFrame", {
-	Size = UDim2.new(1, 0, 1, -90), Position = UDim2.new(0, 0, 0, 90), BackgroundTransparency = 1, BorderSizePixel = 0,
+	Size = UDim2.new(1, 0, 1, -112), Position = UDim2.new(0, 0, 0, 112), BackgroundTransparency = 1, BorderSizePixel = 0,
 	ScrollBarThickness = 3, AutomaticCanvasSize = Enum.AutomaticSize.Y, CanvasSize = UDim2.new(),
 }, pShop)
 new("UIGridLayout", { CellSize = UDim2.new(0, 96, 0, 130), CellPadding = UDim2.new(0, 6, 0, 6), SortOrder = Enum.SortOrder.LayoutOrder }, grid)
@@ -1623,7 +1686,7 @@ local function addCard(it)
 	}, c)
 	round(img, 6)
 	local price = new("TextLabel", {
-		Text = it.Price and ("R$" .. it.Price) or "—", Size = UDim2.new(0, 0, 0, 14), AutomaticSize = Enum.AutomaticSize.X,
+		Text = it.Price and (it.Price == 0 and "Gratis" or ("R$" .. it.Price)) or "—", Size = UDim2.new(0, 0, 0, 14), AutomaticSize = Enum.AutomaticSize.X,
 		Position = UDim2.new(0, 3, 1, -17), BackgroundColor3 = Color3.fromRGB(0, 0, 0), BackgroundTransparency = .35,
 		TextColor3 = WHITE, Font = Enum.Font.GothamBold, TextSize = 10, BorderSizePixel = 0,
 	}, img)
@@ -1667,7 +1730,18 @@ local function buildParams()
 	pcall(function() params.SortType = Enum.CatalogSortType[SORTS[sortIndex][2]] end)
 	pcall(function() params.IncludeOffSale = true end)
 	pcall(function() params.Limit = 120 end)
+	if PF.minPrice then pcall(function() params.MinPrice = PF.minPrice end) end
+	if PF.maxPrice then pcall(function() params.MaxPrice = PF.maxPrice end) end
 	return params
+end
+
+function PF.ok(it)
+	if PF.minPrice == nil and PF.maxPrice == nil then return true end
+	local pr = it.Price
+	if pr == nil then return false end
+	if PF.minPrice and pr < PF.minPrice then return false end
+	if PF.maxPrice and pr > PF.maxPrice then return false end
+	return true
 end
 
 local function search(reset)
@@ -1693,14 +1767,14 @@ local function search(reset)
 			else
 				shopPages:AdvanceToNextPageAsync()
 			end
-			for _, it in ipairs(shopPages:GetCurrentPage()) do addCard(it) end
+			for _, it in ipairs(shopPages:GetCurrentPage()) do if PF.ok(it) then addCard(it) end end
 		end)
 		shopLoading = false
 		if ok then
 			moreBtn.Visible = not shopPages.IsFinished
 			refreshStatus()
 		else
-			statusLbl.Text = "No se pudo cargar el catálogo (el juego puede bloquearlo)"
+			statusLbl.Text = "Error del catálogo: " .. tostring(err):sub(1, 90)
 			warn("[Shop] " .. tostring(err))
 		end
 	end)
@@ -1742,6 +1816,19 @@ end
 styleChips()
 
 goSearch.MouseButton1Click:Connect(function() keyword = searchBox.Text search(true) end)
+function PF.run()
+	PF.minPrice = tonumber(PF.minBox.Text)
+	PF.maxPrice = tonumber(PF.maxBox.Text)
+	if PF.minPrice and PF.maxPrice and PF.minPrice > PF.maxPrice then
+		PF.minPrice, PF.maxPrice = PF.maxPrice, PF.minPrice
+	end
+	keyword = searchBox.Text
+	search(true)
+end
+PF.apply.MouseButton1Click:Connect(PF.run)
+PF.free.MouseButton1Click:Connect(function() PF.minBox.Text = "0" PF.maxBox.Text = "0" PF.run() end)
+PF.minBox.FocusLost:Connect(function(e) if e then PF.run() end end)
+PF.maxBox.FocusLost:Connect(function(e) if e then PF.run() end end)
 searchBox.FocusLost:Connect(function(enter) if enter then keyword = searchBox.Text search(true) end end)
 moreBtn.MouseButton1Click:Connect(function() search(false) end)
 clearAll.MouseButton1Click:Connect(function()
@@ -1858,6 +1945,153 @@ RunService:BindToRenderStep("AimAssets", Enum.RenderPriority.Camera.Value + 1, f
 end)
 end
 
+-- PÁGINA: BOOST FPS -------------------------------------------------------------------------
+do
+local pFps = listPage("BoostFPS")
+local Lighting = game:GetService("Lighting")
+local active = {}
+local origF = { mc = {}, notex = {}, shadows = {}, particles = {} }
+
+local RULES = {
+	mc = function(i)
+		if i:IsA("BasePart") and not i:IsA("Terrain") then return { Material = Enum.Material.SmoothPlastic } end
+	end,
+	notex = function(i)
+		if i:IsA("Decal") or i:IsA("Texture") then return { Transparency = 1 }
+		elseif i:IsA("MeshPart") then return { TextureID = "" } end
+	end,
+	shadows = function(i)
+		if i:IsA("BasePart") and not i:IsA("Terrain") then return { CastShadow = false }
+		elseif i:IsA("PostEffect") then return { Enabled = false }
+		elseif i:IsA("Atmosphere") then return { Density = 0, Haze = 0 } end
+	end,
+	particles = function(i)
+		if i:IsA("ParticleEmitter") or i:IsA("Trail") or i:IsA("Beam") or i:IsA("Fire") or i:IsA("Smoke") or i:IsA("Sparkles") then
+			return { Enabled = false }
+		end
+	end,
+}
+
+local function applyRule(f, inst)
+	local props = RULES[f](inst)
+	if not props then return end
+	local store = origF[f]
+	local o = store[inst]
+	if not o then o = {} store[inst] = o end
+	for k, v in pairs(props) do
+		pcall(function()
+			if o[k] == nil then o[k] = inst[k] end
+			inst[k] = v
+		end)
+	end
+end
+
+local function scan(f)
+	task.spawn(function()
+		local n = 0
+		for _, root in ipairs({ workspace, Lighting }) do
+			for _, i in ipairs(root:GetDescendants()) do
+				if not active[f] then return end
+				applyRule(f, i)
+				n += 1
+				if n % 400 == 0 then task.wait() end
+			end
+		end
+	end)
+end
+
+local function restore(f)
+	for inst, o in pairs(origF[f]) do
+		pcall(function() for k, v in pairs(o) do inst[k] = v end end)
+	end
+	origF[f] = {}
+end
+
+local function onAdded(i)
+	for f in pairs(active) do applyRule(f, i) end
+end
+workspace.DescendantAdded:Connect(onAdded)
+Lighting.DescendantAdded:Connect(onAdded)
+
+local shadowSaved
+local function setFeature(f, on)
+	active[f] = on or nil
+	if on then
+		if f == "shadows" and shadowSaved == nil then shadowSaved = Lighting.GlobalShadows Lighting.GlobalShadows = false end
+		scan(f)
+	else
+		if f == "shadows" and shadowSaved ~= nil then Lighting.GlobalShadows = shadowSaved shadowSaved = nil end
+		restore(f)
+	end
+end
+
+local waterSaved
+local function setWater(on)
+	pcall(function()
+		local t = workspace.Terrain
+		if on then
+			waterSaved = waterSaved or { t.WaterWaveSize, t.WaterWaveSpeed, t.WaterReflectance }
+			t.WaterWaveSize, t.WaterWaveSpeed, t.WaterReflectance = 0, 0, 0
+		elseif waterSaved then
+			t.WaterWaveSize, t.WaterWaveSpeed, t.WaterReflectance = waterSaved[1], waterSaved[2], waterSaved[3]
+			waterSaved = nil
+		end
+	end)
+end
+
+local qSaved
+local function setQuality(on)
+	pcall(function()
+		local r = settings().Rendering
+		if on then
+			qSaved = qSaved or r.QualityLevel
+			r.QualityLevel = Enum.QualityLevel.Level01
+		elseif qSaved then
+			r.QualityLevel = qSaved
+			qSaved = nil
+		end
+	end)
+end
+
+local cBoost = card(pFps, "🚀 Boost FPS")
+local sets = {
+	toggle(cBoost, "Gráficos Minecraft (bloques lisos)", false, function(v) setFeature("mc", v) end),
+	toggle(cBoost, "Sin texturas", false, function(v) setFeature("notex", v) end),
+	toggle(cBoost, "Sin sombras ni efectos", false, function(v) setFeature("shadows", v) end),
+	toggle(cBoost, "Sin partículas (humo, fuego...)", false, function(v) setFeature("particles", v) end),
+	toggle(cBoost, "Agua simple", false, function(v) setWater(v) end),
+	toggle(cBoost, "Calidad gráfica mínima", false, function(v) setQuality(v) end),
+}
+local allRow = row(cBoost, 34)
+local boostAll = button(allRow, "⚡ Boost total", UDim2.new(.5, -4, 1, 0), UDim2.new(0, 0, 0, 0))
+local boostOff = button(allRow, "↺ Restaurar", UDim2.new(.5, -4, 1, 0), UDim2.new(.5, 4, 0, 0), "panel")
+boostAll.MouseButton1Click:Connect(function()
+	for _, set in ipairs(sets) do set(true) end
+	notify("Boost total activado")
+end)
+boostOff.MouseButton1Click:Connect(function()
+	for _, set in ipairs(sets) do set(false) end
+	notify("Gráficos restaurados")
+end)
+
+local fpsOn, fpsLimit = false, 120
+local function capFps(n) return (pcall(function() setfpscap(n) end)) end
+local cCap = card(pFps, "🔓 Límite de FPS")
+toggle(cCap, "Desbloquear FPS", false, function(v)
+	fpsOn = v
+	if capFps(v and fpsLimit or 60) then
+		notify(v and ("FPS máximos: " .. fpsLimit) or "FPS: 60")
+	else
+		notify("Tu ejecutor no permite cambiar los FPS")
+	end
+end)
+slider(cCap, "FPS máximos", 30, 360, 120, function(v, u)
+	fpsLimit = v
+	if u and fpsOn then capFps(v) end
+end)
+label(cCap, "Desbloquear FPS solo funciona en ejecutores con setfpscap. Sin ejecutor, Roblox limita los FPS y un script no lo puede cambiar.", 11, 56, true)
+end
+
 -- RESPAWN -----------------------------------------------------------------------------------
 lp.CharacterAdded:Connect(function(char)
 	stopFly()
@@ -1893,6 +2127,7 @@ addTab("Utilidades", "🛠  Utilidades", 7)
 addTab("Espectar", "🎥  Espectar", 8)
 addTab("Avatar", "👤  Avatar", 9)
 addTab("AimAssets", "🎯  AimAssets", 10)
+addTab("BoostFPS", "🚀  Boost FPS", 11)
 if CONFIG.BACKGROUND_IMAGE ~= "" then setBackground(CONFIG.BACKGROUND_IMAGE) end
 selectTab("Ajustes")
 applyAll()
